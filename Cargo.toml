@@ -1,0 +1,9 @@
+[package]
+name = "bare"
+version = "0.1.0"
+edition = "2021"
+description = "A zero-dependency, minimalist static site generator written in pure Rust."
+license = "MIT"
+
+[dependencies]
+# Intentionally empty: bare uses the Rust standard library only.
