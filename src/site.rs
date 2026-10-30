@@ -1,5 +1,6 @@
 //! Site orchestration: discover posts, render them through templates, write `dist/`.
 
+use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -14,6 +15,8 @@ use crate::template::{Context, Template};
 pub struct Config {
     pub content_dir: PathBuf,
     pub out_dir: PathBuf,
+    /// Delete the whole output directory before building.
+    pub clean: bool,
 }
 
 /// A parsed and rendered post, ready to be placed into templates.
@@ -92,8 +95,13 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     // Newest first; ISO dates (YYYY-MM-DD) sort correctly as strings.
     posts.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| a.slug.cmp(&b.slug)));
 
-    // Only the posts directory is cleared, so stale pages from deleted posts
-    // disappear without touching anything else that may live in the output dir.
+    if config.clean && config.out_dir.exists() {
+        ensure_safe_to_clean(config)?;
+        fs::remove_dir_all(&config.out_dir).at(&config.out_dir)?;
+    }
+
+    // Without `clean`, only the posts directory is cleared, so stale pages from
+    // deleted posts disappear without touching anything else in the output dir.
     let posts_out = config.out_dir.join("posts");
     if posts_out.exists() {
         fs::remove_dir_all(&posts_out).at(&posts_out)?;
@@ -140,6 +148,27 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         posts: posts.len(),
         written,
     })
+}
+
+/// Refuses to wipe an output directory that contains the working directory or
+/// the content sources (e.g. `--out .` or `--out ..`).
+fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
+    let out = fs::canonicalize(&config.out_dir).at(&config.out_dir)?;
+    let content = fs::canonicalize(&config.content_dir).at(&config.content_dir)?;
+    let cwd = env::current_dir()
+        .and_then(fs::canonicalize)
+        .at(Path::new("."))?;
+
+    if out.parent().is_none() || cwd.starts_with(&out) || content.starts_with(&out) {
+        return Err(BuildError {
+            path: config.out_dir.clone(),
+            source: io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "refusing to clean: it contains the working directory or the content sources",
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Reads and renders every `*.md` file directly inside `dir`.

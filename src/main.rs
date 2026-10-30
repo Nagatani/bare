@@ -20,6 +20,7 @@ USAGE:
 OPTIONS:
     -c, --content <DIR>   Source directory with posts/ and templates/  [default: content]
     -o, --out <DIR>       Output directory                             [default: dist]
+        --clean           Delete the whole output directory before building
     -h, --help            Print this help
     -V, --version         Print version";
 
@@ -33,6 +34,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
     let mut config = Config {
         content_dir: PathBuf::from("content"),
         out_dir: PathBuf::from("dist"),
+        clean: false,
     };
     let mut args = args.into_iter();
 
@@ -41,6 +43,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
             "build" => {}
             "-h" | "--help" | "help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
+            "--clean" => config.clean = true,
             "-c" | "--content" | "-o" | "--out" => {
                 let value = args
                     .next()
@@ -75,9 +78,10 @@ fn main() -> ExitCode {
     };
 
     println!(
-        "bare: building {} -> {}",
+        "bare: building {} -> {}{}",
         config.content_dir.display(),
-        config.out_dir.display()
+        config.out_dir.display(),
+        if config.clean { " (clean)" } else { "" }
     );
     let started = Instant::now();
 

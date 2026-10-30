@@ -17,6 +17,9 @@ cargo build --release
 # 入出力ディレクトリを指定
 cargo run -- build --content content --out dist
 
+# dist/ を丸ごと削除してから作り直す
+cargo run -- --clean
+
 # テスト
 cargo test
 ```
@@ -33,6 +36,19 @@ bare: generated 3 files (2 posts + index) in 1 ms
 
 生成後は `dist/index.html` をブラウザで開いてください（相対リンクなので `file://` でも閲覧できます）。
 
+通常のビルドでは `dist/posts/` だけを作り直し、`dist/` 直下に置いた他のファイルは残します。
+`--clean` を付けると `dist/` 全体を削除してから生成します。ただし、作業ディレクトリや
+`content/` を含むディレクトリ（`--out .` など）は安全のため削除を拒否します。
+
+## GitHub Pages で公開する
+
+`.github/workflows/pages.yml` が `main` への push ごとに `cargo test` → `bare --clean` を実行し、
+`dist/` を GitHub Pages にデプロイします（Actions タブから手動実行も可能）。
+
+初回のみ、リポジトリの **Settings → Pages → Build and deployment → Source** を
+**GitHub Actions** に設定してください。公開 URL は `https://<user>.github.io/<repo>/` です。
+リンクはすべて相対パスなので、サブパス配下でもそのまま動作します。
+
 ## ディレクトリ構成
 
 ```text
@@ -45,6 +61,7 @@ content/
   posts/        記事（*.md）
   templates/    layout.html / post.html / index.html
 dist/           生成物（git 管理外）
+.github/workflows/pages.yml   GitHub Pages へのデプロイ
 ```
 
 ## 記事の書き方
