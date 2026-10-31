@@ -10,11 +10,11 @@ GitHub のアカウントさえあれば、Rust をインストールしなく�
 
 ## 1. リポジトリをフォークする
 
-[Nagatani/Bare](https://github.com/Nagatani/Bare) を開き、右上の Fork から Create fork を押します。
+[Nagatani/bare](https://github.com/Nagatani/bare) を開き、右上の Fork から Create fork を押します。
 
 公開 URL はリポジトリ名で決まります。
 
-- 名前を変えずに `Bare` のまま → `https://<ユーザー名>.github.io/Bare/`
+- 名前を変えずに `bare` のまま → `https://<ユーザー名>.github.io/bare/`
 - 名前を `<ユーザー名>.github.io` にする → `https://<ユーザー名>.github.io/`
 
 リンクはすべて相対パスで出力されるので、どちらの URL でもそのまま動きます。
@@ -74,8 +74,8 @@ tags: [diary]
 [rustup](https://rustup.rs/) で Rust を入れておけば、公開前に手元で確認できます。
 
 ```sh
-git clone https://github.com/<ユーザー名>/Bare.git
-cd Bare
+git clone https://github.com/<ユーザー名>/bare.git
+cd bare
 cargo run -- --clean
 open dist/index.html
 ```
@@ -91,7 +91,7 @@ GitHub 上でリポジトリのトップにある Sync fork を押すのがい�
 コマンドラインで取り込む場合は、次のようにします。
 
 ```sh
-git remote add upstream https://github.com/Nagatani/Bare.git
+git remote add upstream https://github.com/Nagatani/bare.git
 git fetch upstream
 git merge upstream/main
 ```
