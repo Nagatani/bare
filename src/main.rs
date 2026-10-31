@@ -91,9 +91,10 @@ fn main() -> ExitCode {
                 println!("  wrote {}", path.display());
             }
             println!(
-                "bare: generated {} files ({} posts + index) in {} ms",
+                "bare: generated {} files ({} posts + index), copied {} static files in {} ms",
                 report.written.len(),
                 report.posts,
+                report.static_files,
                 started.elapsed().as_millis()
             );
             ExitCode::SUCCESS

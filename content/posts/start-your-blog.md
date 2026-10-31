@@ -65,7 +65,15 @@ tags: [diary]
 
 - `date` は `YYYY-MM-DD` で書くと、一覧が新着順に並びます。
 - サンプル記事（この記事を含む 3 本）は削除して構いません。記事が 0 本になってもビルドは通ります。
-- 使える記法は見出し、段落、リスト、リンク、インラインコード、コードブロックです。
+- 使える記法は [Hello, World](hello-world.html) の表にまとめています。
+
+画像やファイルは `content/static/` に置きます。中身はそのまま `dist/` にコピーされます。
+
+1. 画像を `content/static/images/diagram.png` に置く
+2. 記事から `![図の説明](/images/diagram.png)` のように参照する
+
+`content/static/` には favicon（`favicon.svg`）も入っているので、差し替えれば自分のアイコンになります。
+独自ドメインを使う場合は、`content/static/CNAME` にドメイン名を書いておきます。
 
 デザインを変えたいときは `content/templates/` の HTML と CSS を編集します。
 

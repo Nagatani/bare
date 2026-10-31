@@ -4,6 +4,8 @@ A zero-dependency, minimalist static site generator written in pure Rust.
 
 `Cargo.toml` の `[dependencies]` は空で、Rust 標準ライブラリ（`std`）だけで動作します。
 
+デモ: <https://nagatani.github.io/bare/>
+
 ## 自分のブログを始める（フォーク）
 
 このリポジトリはフォークしてそのまま自分のブログにすることを想定しています。
@@ -46,7 +48,7 @@ bare: building content -> dist
   wrote dist/posts/rust-without-crates.html
   wrote dist/posts/hello-world.html
   wrote dist/index.html
-bare: generated 4 files (3 posts + index) in 2 ms
+bare: generated 4 files (3 posts + index), copied 2 static files in 9 ms
 ```
 
 生成後は `dist/index.html` をブラウザで開いてください（相対リンクなので `file://` でも閲覧できます）。
@@ -55,10 +57,13 @@ bare: generated 4 files (3 posts + index) in 2 ms
 `--clean` を付けると `dist/` 全体を削除してから生成します。ただし、作業ディレクトリや
 `content/` を含むディレクトリ（`--out .` など）は安全のため削除を拒否します。
 
+`content/static/` の中身（画像・favicon・`CNAME` など）は、ディレクトリ構造を保ったまま `dist/` にコピーされます。
+
 ## GitHub Pages で公開する
 
 `.github/workflows/pages.yml` が `main` への push ごとに `cargo test` → `bare --clean` を実行し、
 `dist/` を GitHub Pages にデプロイします（Actions タブから手動実行も可能）。
+Pages が未設定のまま実行された場合は、最初のステップで設定方法を示すエラーを出して止まります。
 
 初回のみ、リポジトリの **Settings → Pages → Build and deployment → Source** を
 **GitHub Actions** に設定してください。公開 URL は `https://<user>.github.io/<repo>/` です。
@@ -76,6 +81,7 @@ content/
   site.conf     サイト名・説明・著者・言語の設定
   posts/        記事（*.md。0 本でもビルド可）
   templates/    layout.html / post.html / index.html
+  static/       dist/ にそのままコピーされるファイル（画像・favicon など）
 dist/           生成物（git 管理外）
 .github/workflows/pages.yml   GitHub Pages へのデプロイ
 ```
@@ -104,11 +110,23 @@ tags: [rust, ssg]
 | 記法 | 出力 |
 | --- | --- |
 | `#` 〜 `######` | `<h1>` 〜 `<h6>` |
-| ```` ```lang ```` 〜 ```` ``` ```` | `<pre><code class="language-lang">`（HTML エスケープ済み） |
-| `` `code` `` | `<code>` |
-| `- item` の連続行 | `<ul><li>` |
-| 空行区切りのテキスト | `<p>` |
-| `[text](url)` | `<a href="url">` |
+| 空行区切りのテキスト | `<p>`（日本語の行末は空白を入れずに連結） |
+| ```` ```lang ```` 〜 ```` ``` ```` | `<pre><code class="language-lang">`（HTML エスケープ済み。4 つ以上のバッククォートで囲めば中に ```` ``` ```` を書ける） |
+| `` `code` `` / ``` `` a`b `` ``` | `<code>` |
+| `- item` / `* item` / `+ item` の連続行 | `<ul><li>` |
+| `1. item` / `1) item` の連続行 | `<ol><li>`（開始番号を引き継ぐ） |
+| `> text` | `<blockquote>`（中にリストなども書ける） |
+| `\| a \| b \|` + `\| --- \| :---: \|` | `<table>`（`:` で左・中央・右寄せ） |
+| `---` / `***` / `___` | `<hr>` |
+| `[text](url "title")` | `<a href="url">` |
+| `![alt](url "title")` | `<img src="url" alt="alt">` |
+| `**strong**` / `*em*` / `~~del~~` | `<strong>` / `<em>` / `<del>` |
+| `\*` など | 記号をそのまま表示 |
+
+`/images/a.png` のように `/` で始まる URL は、ページからの相対パスに変換されます。
+GitHub Pages のサブパス（`https://<user>.github.io/<repo>/`）で公開しても画像やリンクが切れません。
+
+未対応: 入れ子のリスト、リスト項目の複数行、生の HTML（エスケープされて表示されます）。
 
 ## テンプレート
 

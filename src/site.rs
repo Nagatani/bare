@@ -33,7 +33,10 @@ struct Post {
 #[derive(Debug)]
 pub struct BuildReport {
     pub posts: usize,
+    /// Generated HTML pages.
     pub written: Vec<PathBuf>,
+    /// Number of files copied from `content/static/`.
+    pub static_files: usize,
 }
 
 /// An I/O failure together with the path that caused it.
@@ -109,6 +112,9 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     }
     fs::create_dir_all(&posts_out).at(&posts_out)?;
 
+    // Static files go in first, so a generated page wins over a same-named file.
+    let static_files = copy_dir(&config.content_dir.join("static"), &config.out_dir)?;
+
     let mut written = Vec::with_capacity(posts.len() + 1);
 
     for post in &posts {
@@ -152,6 +158,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     Ok(BuildReport {
         posts: posts.len(),
         written,
+        static_files,
     })
 }
 
@@ -174,6 +181,28 @@ fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
         });
     }
     Ok(())
+}
+
+/// Recursively copies the contents of `from` into `to`, returning the number of
+/// files copied. A missing `from` directory copies nothing.
+fn copy_dir(from: &Path, to: &Path) -> Result<usize, BuildError> {
+    if !from.is_dir() {
+        return Ok(0);
+    }
+    fs::create_dir_all(to).at(to)?;
+    let mut count = 0;
+    for entry in fs::read_dir(from).at(from)? {
+        let entry = entry.at(from)?;
+        let source = entry.path();
+        let target = to.join(entry.file_name());
+        if entry.file_type().at(&source)?.is_dir() {
+            count += copy_dir(&source, &target)?;
+        } else {
+            fs::copy(&source, &target).at(&source)?;
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 /// Reads `site.conf` into the `{{site_*}}` values shared by every template.
@@ -220,7 +249,8 @@ fn load_posts(dir: &Path) -> Result<Vec<Post>, BuildError> {
             title: meta.get("title").unwrap_or(&slug).to_string(),
             date: meta.get("date").unwrap_or_default().to_string(),
             tags: meta.tags(),
-            html: parser::markdown_to_html(&doc.body),
+            // Posts live in posts/, one level below the site root.
+            html: parser::markdown_to_html(&doc.body, "../"),
             slug,
         });
     }

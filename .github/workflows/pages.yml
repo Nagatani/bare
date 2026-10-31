@@ -22,18 +22,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Fail fast with an actionable message instead of configure-pages' "Not Found".
+      - name: Check GitHub Pages settings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type=$(gh api "repos/${{ github.repository }}/pages" --jq .build_type 2>/dev/null || true)
+          if [ "$build_type" != "workflow" ]; then
+            echo "::error title=GitHub Pages is not set up::Open Settings → Pages → Build and deployment and set Source to \"GitHub Actions\", then re-run this workflow."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
 
       - name: Set up Rust
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'src/**') }}
+          restore-keys: cargo-${{ runner.os }}-
 
       - name: Test
         run: cargo test --locked
@@ -41,11 +53,13 @@ jobs:
       - name: Build site
         run: cargo run --release --locked -- build --clean
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
+          # Keep dotfiles copied from content/static/ (e.g. .well-known/).
+          include-hidden-files: true
 
   deploy:
     needs: build
@@ -55,4 +69,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
