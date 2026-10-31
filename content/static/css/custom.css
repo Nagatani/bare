@@ -1,0 +1,22 @@
+/*
+ * Your own styles.
+ *
+ * This file belongs to your blog: upstream bare keeps it empty and never
+ * changes it, so syncing your fork will not conflict here. Change the look
+ * of the site here instead of editing style.css.
+ *
+ * Rules written outside any @layer win over everything in style.css, so plain
+ * selectors are enough — no !important needed.
+ *
+ * Examples (uncomment to try):
+ *
+ * :root {
+ *   --color-accent: light-dark(#2563eb, #60a5fa);
+ *   --content-width: 48rem;
+ *   --font-sans: "Noto Serif JP", serif;
+ * }
+ *
+ * .post-item time {
+ *   font-family: var(--font-sans);
+ * }
+ */

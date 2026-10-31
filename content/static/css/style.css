@@ -1,0 +1,496 @@
+/*
+ * bare — default theme.
+ *
+ * Cascade layers, lowest priority first. A later layer always wins over an
+ * earlier one regardless of selector specificity, and styles outside any layer
+ * (see custom.css) win over all of them — so overrides never need `!important`
+ * or longer selectors.
+ */
+@layer reset, tokens, base, layout, components, utilities, overrides;
+
+/* ------------------------------------------------------------------------ */
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  :where(body, h1, h2, h3, h4, h5, h6, p, figure, blockquote, pre, ul, ol, dl, dd) {
+    margin: 0;
+  }
+
+  :where(img, svg, video) {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  :where(html) {
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+
+    /* Colors: each token carries its light and dark value. */
+    --color-bg: light-dark(#fdfdfc, #161616);
+    --color-fg: light-dark(#1f2328, #e7e5e4);
+    --color-muted: light-dark(#6b7280, #9ca3af);
+    --color-accent: light-dark(#b4532a, #f08a5d);
+    --color-rule: light-dark(#e7e5e4, #2e2e2e);
+    --color-surface: light-dark(#f4f3f1, #222);
+
+    /* Typography */
+    --font-sans: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.0625rem);
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-lg: 1.15rem;
+    --text-h3: 1.1rem;
+    --text-h2: 1.35rem;
+    --text-h1: clamp(1.6rem, 1.3rem + 1.2vw, 1.9rem);
+    --leading: 1.9;
+    --leading-tight: 1.4;
+    --leading-code: 1.7;
+
+    /* Spacing scale */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1.25rem;
+    --space-5: 2rem;
+    --space-6: 3rem;
+    --space-7: 4rem;
+    --space-8: 5rem;
+    /* Vertical rhythm between paragraphs and lists. */
+    --flow: 1.6em;
+
+    /* Layout */
+    /* Wide enough for ~50 full-width characters or ~100 columns of code per line. */
+    --content-width: 56rem;
+    --gutter: clamp(1rem, 4vw, 1.5rem);
+    --header-height: 6.5rem;
+    --radius: 8px;
+    --radius-sm: 4px;
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+@layer base {
+  html {
+    /* Keep headings reached via #anchor clear of the sticky header. */
+    scroll-padding-block-start: calc(var(--header-height) + var(--space-4));
+
+    @media (prefers-reduced-motion: no-preference) {
+      scroll-behavior: smooth;
+    }
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font: var(--text-base) / var(--leading) var(--font-sans);
+    accent-color: var(--color-accent);
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
+
+  a {
+    color: var(--color-accent);
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: from-font;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    line-height: var(--leading-tight);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+
+    /* Break Japanese headings at phrase boundaries (where supported). */
+    &:lang(ja) {
+      word-break: auto-phrase;
+    }
+  }
+
+  h1 {
+    font-size: var(--text-h1);
+    margin-block-end: var(--space-3);
+  }
+
+  h2 {
+    font-size: var(--text-h2);
+    margin-block: var(--space-7) var(--space-4);
+  }
+
+  h3 {
+    font-size: var(--text-h3);
+    margin-block: var(--space-6) var(--space-3);
+  }
+
+  :where(h4, h5, h6) {
+    font-size: 1rem;
+    margin-block: var(--space-5) var(--space-3);
+  }
+
+  p {
+    margin-block-end: var(--flow);
+    text-wrap: pretty;
+  }
+
+  ul,
+  ol {
+    padding-inline-start: 1.5rem;
+    margin-block-end: var(--flow);
+  }
+
+  li + li {
+    margin-block-start: 0.6em;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--color-surface);
+    padding: 0.15em 0.4em;
+    border-radius: var(--radius-sm);
+  }
+
+  pre {
+    background: var(--color-surface);
+    margin-block: var(--space-5);
+    padding: 1.5rem;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    line-height: var(--leading-code);
+    tab-size: 4;
+
+    & code {
+      background: none;
+      padding: 0;
+      font-size: 0.85rem;
+    }
+  }
+
+  img {
+    display: block;
+    margin: var(--space-5) auto;
+    border-radius: var(--radius);
+  }
+
+  blockquote {
+    margin-block: var(--space-5);
+    padding-block: var(--space-1);
+    padding-inline-start: var(--space-4);
+    border-inline-start: 3px solid var(--color-rule);
+    color: var(--color-muted);
+
+    & > :last-child {
+      margin-block-end: 0;
+    }
+  }
+
+  hr {
+    border: 0;
+    border-block-start: 1px solid var(--color-rule);
+    margin-block: 3.5rem;
+  }
+
+  table {
+    border-collapse: collapse;
+    inline-size: 100%;
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  th,
+  td {
+    padding: 0.6rem 0.9rem;
+    border-block-end: 1px solid var(--color-rule);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  th {
+    font-weight: 600;
+    border-block-end-width: 2px;
+    white-space: nowrap;
+  }
+
+  del {
+    color: var(--color-muted);
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+@layer layout {
+  .wrap {
+    max-inline-size: var(--content-width);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .site-header {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 10;
+    border-block-end: 1px solid var(--color-rule);
+    background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+
+    & .wrap {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: var(--space-1) var(--space-4);
+      padding-block: var(--space-5);
+    }
+  }
+
+  .site-main {
+    padding-block: var(--space-8) 6rem;
+
+    @media (width <= 480px) {
+      padding-block: 3.5rem var(--space-7);
+    }
+  }
+
+  .site-footer {
+    border-block-start: 1px solid var(--color-rule);
+    color: var(--color-muted);
+    font-size: 0.8rem;
+
+    & .wrap {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: var(--space-2) var(--space-4);
+      padding-block: 2.5rem;
+    }
+  }
+
+  @media (width <= 480px) {
+    :root {
+      --header-height: 5rem;
+    }
+
+    h2 {
+      margin-block-start: var(--space-6);
+    }
+  }
+
+  @media print {
+    .site-header,
+    .site-footer,
+    .back {
+      display: none;
+    }
+
+    .site-main {
+      padding-block: 0;
+    }
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+@layer components {
+  .brand {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+    text-decoration: none;
+  }
+
+  .tagline {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) 1rem;
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.9rem;
+  }
+
+  .tags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    & li + li {
+      margin-block-start: 0;
+    }
+  }
+
+  .tag {
+    padding: 0.1rem 0.7rem;
+    border: 1px solid var(--color-rule);
+    border-radius: 999px;
+    color: var(--color-muted);
+    font-size: var(--text-xs);
+  }
+
+  .page-intro {
+    margin-block-end: var(--space-6);
+  }
+
+  .post-header {
+    margin-block-end: 3.5rem;
+    padding-block-end: 2.5rem;
+    border-block-end: 1px solid var(--color-rule);
+  }
+
+  .lead {
+    margin-block-end: var(--space-4);
+    color: var(--color-muted);
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  /* Article body rendered from Markdown. */
+  .prose {
+    & > :first-child {
+      margin-block-start: 0;
+    }
+  }
+
+  .heading-anchor {
+    margin-inline-start: 0.4em;
+    color: var(--color-muted);
+    text-decoration: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+
+    :is(h1, h2, h3, h4, h5, h6):hover > &,
+    &:focus-visible {
+      opacity: 1;
+    }
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    margin-block: var(--space-5);
+  }
+
+  .post-list {
+    container-type: inline-size;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    & li + li {
+      margin-block-start: 0;
+    }
+  }
+
+  .post-item {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: var(--space-3) var(--space-4);
+    padding-block: var(--space-5);
+    border-block-end: 1px solid var(--color-rule);
+
+    &:first-child {
+      border-block-start: 1px solid var(--color-rule);
+    }
+
+    & time {
+      padding-block-start: 0.15rem;
+      color: var(--color-muted);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+
+    & a {
+      font-weight: 600;
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    & :is(.tags, .post-desc) {
+      grid-column: 2;
+    }
+
+    /* Stack date above title when the list itself is narrow. */
+    @container (width < 30rem) {
+      grid-template-columns: 1fr;
+      gap: var(--space-2);
+      padding-block: 1.5rem;
+
+      & :is(.tags, .post-desc) {
+        grid-column: 1;
+      }
+    }
+  }
+
+  .post-desc {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: 0.92rem;
+    line-height: 1.7;
+  }
+
+  .back {
+    margin-block-start: var(--space-8);
+    padding-block-start: var(--space-5);
+    border-block-start: 1px solid var(--color-rule);
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+@layer utilities {
+  .skip-link {
+    position: absolute;
+    inset-inline-start: var(--space-2);
+    inset-block-start: -10rem;
+    z-index: 100;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+
+    &:focus {
+      inset-block-start: var(--space-2);
+    }
+  }
+
+  .visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

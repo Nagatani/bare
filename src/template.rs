@@ -77,7 +77,9 @@ mod tests {
     #[test]
     fn replaces_known_tokens() {
         let tpl = Template::new("<h1>{{ title }}</h1>{{content}}");
-        let ctx = Context::new().with("title", "Hi").with("content", "<p>{{title}}</p>");
+        let ctx = Context::new()
+            .with("title", "Hi")
+            .with("content", "<p>{{title}}</p>");
         assert_eq!(tpl.render(&ctx), "<h1>Hi</h1><p>{{title}}</p>");
     }
 

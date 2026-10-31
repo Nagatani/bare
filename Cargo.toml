@@ -2,8 +2,15 @@
 name = "bare"
 version = "0.1.0"
 edition = "2021"
+# The code builds on 1.70; Cargo.lock format v4 needs Cargo 1.78.
+rust-version = "1.78"
 description = "A zero-dependency, minimalist static site generator written in pure Rust."
 license = "MIT"
+repository = "https://github.com/Nagatani/bare"
+homepage = "https://nagatani.github.io/bare/"
+readme = "README.md"
+keywords = ["static-site-generator", "blog", "markdown", "zero-dependency"]
+categories = ["command-line-utilities", "web-programming"]
 
 [dependencies]
 # Intentionally empty: bare uses the Rust standard library only.

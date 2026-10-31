@@ -72,7 +72,13 @@ impl SiteMeta {
             .or_else(|| non_empty("base_url"))
             .map(|url| url.trim().to_string())
             .filter(|url| !url.is_empty())
-            .map(|url| if url.ends_with('/') { url } else { format!("{url}/") });
+            .map(|url| {
+                if url.ends_with('/') {
+                    url
+                } else {
+                    format!("{url}/")
+                }
+            });
 
         Ok(Self {
             title: value("title", "bare"),
@@ -91,7 +97,10 @@ impl SiteMeta {
             .with("site_description", escape_html(&self.description))
             .with("site_author", escape_html(&self.author))
             .with("site_lang", escape_html(&self.lang))
-            .with("site_url", escape_html(self.base_url.as_deref().unwrap_or("")))
+            .with(
+                "site_url",
+                escape_html(self.base_url.as_deref().unwrap_or("")),
+            )
     }
 
     /// Absolute URL for a path relative to the site root, if `base_url` is known.
@@ -139,12 +148,19 @@ impl SiteMeta {
         }
         tags.push(meta("property", "og:site_name", &self.title));
         tags.push(meta("property", "og:title", page.title));
-        let kind = if page.published.is_some() { "article" } else { "website" };
+        let kind = if page.published.is_some() {
+            "article"
+        } else {
+            "website"
+        };
         tags.push(meta("property", "og:type", kind));
 
         if let Some(url) = page.path.and_then(|path| self.url(path)) {
             tags.push(meta("property", "og:url", &url));
-            tags.push(format!("<link rel=\"canonical\" href=\"{}\">", escape_html(&url)));
+            tags.push(format!(
+                "<link rel=\"canonical\" href=\"{}\">",
+                escape_html(&url)
+            ));
         }
 
         let image = page
@@ -308,7 +324,10 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 .clone()
                 .with("title", escape_html(&post.title))
                 .with("date", escape_html(&post.date))
-                .with("description", escape_html(post.description.as_deref().unwrap_or("")))
+                .with(
+                    "description",
+                    escape_html(post.description.as_deref().unwrap_or("")),
+                )
                 .with("tags", render_tags(&post.tags))
                 .with("content", post.html.as_str()),
         );
@@ -324,7 +343,10 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             &base
                 .clone()
                 .with("title", escape_html(&post.title))
-                .with("page_title", escape_html(&format!("{} · {}", post.title, site.title)))
+                .with(
+                    "page_title",
+                    escape_html(&format!("{} · {}", post.title, site.title)),
+                )
                 .with("meta", meta)
                 .with("root", root)
                 .with("content", body),
@@ -374,7 +396,10 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             &base
                 .clone()
                 .with("title", "404 Not Found")
-                .with("page_title", escape_html(&format!("404 Not Found · {}", site.title)))
+                .with(
+                    "page_title",
+                    escape_html(&format!("404 Not Found · {}", site.title)),
+                )
                 .with("meta", meta)
                 .with("root", root.as_str())
                 .with("content", body),
@@ -384,7 +409,10 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
 
     if site.base_url.is_some() {
         write(config.out_dir.join("feed.xml"), feed::atom(&site, &posts))?;
-        write(config.out_dir.join("sitemap.xml"), feed::sitemap(&site, &posts))?;
+        write(
+            config.out_dir.join("sitemap.xml"),
+            feed::sitemap(&site, &posts),
+        )?;
     } else {
         notes.push(
             "base_url is not set: skipped feed.xml, sitemap.xml and absolute URLs \
@@ -599,8 +627,14 @@ mod tests {
     #[test]
     fn resolves_urls_against_base() {
         let s = site(Some("https://u.github.io/bare/"));
-        assert_eq!(s.url("posts/a.html").as_deref(), Some("https://u.github.io/bare/posts/a.html"));
-        assert_eq!(s.image_url("/images/a.png").as_deref(), Some("https://u.github.io/bare/images/a.png"));
+        assert_eq!(
+            s.url("posts/a.html").as_deref(),
+            Some("https://u.github.io/bare/posts/a.html")
+        );
+        assert_eq!(
+            s.image_url("/images/a.png").as_deref(),
+            Some("https://u.github.io/bare/images/a.png")
+        );
         assert_eq!(s.base_path(), "/bare/");
         assert_eq!(site(Some("https://example.com/")).base_path(), "/");
         assert_eq!(site(None).url("x"), None);
@@ -618,11 +652,19 @@ mod tests {
         };
         let without = site(None).meta_tags(&page);
         assert!(without.contains("<meta name=\"description\" content=\"Notes\">"));
-        assert!(!without.contains("og:url") && !without.contains("og:image") && !without.contains("feed.xml"));
+        assert!(
+            !without.contains("og:url")
+                && !without.contains("og:image")
+                && !without.contains("feed.xml")
+        );
 
         let with = site(Some("https://u.github.io/bare/")).meta_tags(&page);
-        assert!(with.contains("<meta property=\"og:url\" content=\"https://u.github.io/bare/posts/a.html\">"));
-        assert!(with.contains("<meta property=\"og:image\" content=\"https://u.github.io/bare/images/a.png\">"));
+        assert!(with.contains(
+            "<meta property=\"og:url\" content=\"https://u.github.io/bare/posts/a.html\">"
+        ));
+        assert!(with.contains(
+            "<meta property=\"og:image\" content=\"https://u.github.io/bare/images/a.png\">"
+        ));
         assert!(with.contains("href=\"../feed.xml\""));
         assert!(with.contains("article:published_time"));
     }

@@ -117,6 +117,7 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
         root,
         paragraph: Vec::new(),
         list: None,
+        ids: HashMap::new(),
     };
 
     let mut i = 0;
@@ -140,8 +141,7 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
             blocks.flush();
         } else if let Some((level, text)) = parse_heading(trimmed) {
             blocks.flush();
-            let html = render_inline(text, root);
-            blocks.out.push_str(&format!("<h{level}>{html}</h{level}>\n"));
+            blocks.heading(level, text);
         } else if is_thematic_break(trimmed) {
             blocks.flush();
             blocks.out.push_str("<hr>\n");
@@ -156,7 +156,9 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
                 i += 1;
             }
             blocks.out.push_str("<blockquote>\n");
-            blocks.out.push_str(&markdown_to_html(&inner.join("\n"), root));
+            blocks
+                .out
+                .push_str(&markdown_to_html(&inner.join("\n"), root));
             blocks.out.push_str("</blockquote>\n");
             continue;
         } else if let Some(aligns) = table_alignments(trimmed, lines.get(i + 1).copied()) {
@@ -188,6 +190,8 @@ struct Blocks<'a> {
     root: &'a str,
     paragraph: Vec<&'a str>,
     list: Option<(ListKind, Vec<&'a str>)>,
+    /// Heading ids used so far, for de-duplication.
+    ids: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -209,6 +213,32 @@ impl<'a> Blocks<'a> {
     fn flush(&mut self) {
         self.flush_paragraph();
         self.flush_list();
+    }
+
+    /// Emits a heading with an `id` and a `#` self-link, so sections can be
+    /// linked to directly (e.g. `posts/a.html#インストール`).
+    fn heading(&mut self, level: usize, text: &str) {
+        let html = render_inline(text, self.root);
+        let id = self.unique_id(slugify(&strip_tags(&html)));
+        self.out.push_str(&format!(
+            "<h{level} id=\"{id}\">{html}<a class=\"heading-anchor\" href=\"#{id}\" \
+             aria-hidden=\"true\" tabindex=\"-1\">#</a></h{level}>\n",
+            id = escape_html(&id),
+        ));
+    }
+
+    fn unique_id(&mut self, base: String) -> String {
+        let base = if base.is_empty() {
+            "section".to_string()
+        } else {
+            base
+        };
+        let seen = self.ids.entry(base.clone()).or_insert(0);
+        *seen += 1;
+        match *seen {
+            1 => base,
+            n => format!("{base}-{}", n - 1),
+        }
     }
 
     fn flush_paragraph(&mut self) {
@@ -280,7 +310,8 @@ impl<'a> Blocks<'a> {
     }
 
     fn table(&mut self, header: &str, aligns: &[Align], rows: &[&str]) {
-        self.out.push_str("<div class=\"table-wrap\"><table>\n<thead>\n");
+        self.out
+            .push_str("<div class=\"table-wrap\"><table>\n<thead>\n");
         self.table_row(header, aligns, "th");
         self.out.push_str("</thead>\n<tbody>\n");
         for row in rows {
@@ -363,7 +394,9 @@ fn parse_list_item(line: &str) -> Option<(ListKind, &str)> {
         return None;
     }
     let rest = &line[digits..];
-    let item = rest.strip_prefix(". ").or_else(|| rest.strip_prefix(") "))?;
+    let item = rest
+        .strip_prefix(". ")
+        .or_else(|| rest.strip_prefix(") "))?;
     let start = line[..digits].parse().ok()?;
     Some((ListKind::Ordered(start), item.trim()))
 }
@@ -422,6 +455,39 @@ fn split_row(row: &str) -> Vec<&str> {
     cells
 }
 
+/// Removes tags and character references from rendered inline HTML.
+fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut skip_until = None;
+    for c in html.chars() {
+        match (skip_until, c) {
+            (Some(end), _) if c == end => skip_until = None,
+            (Some(_), _) => {}
+            (None, '<') => skip_until = Some('>'),
+            (None, '&') => skip_until = Some(';'),
+            (None, _) => out.push(c),
+        }
+    }
+    out
+}
+
+/// Turns heading text into an id: lowercase letters and digits (any script)
+/// are kept, whitespace and `-`/`_` become single hyphens, the rest is dropped.
+fn slugify(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
+        } else if (c.is_whitespace() || c == '-' || c == '_')
+            && !out.is_empty()
+            && !out.ends_with('-')
+        {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_string()
+}
+
 /// Joins the lines of a paragraph. No space is inserted when either side of the
 /// line break is a CJK (or other wide) character, so Japanese text flows naturally.
 fn join_lines(lines: &[&str]) -> String {
@@ -478,7 +544,11 @@ fn render_inline(text: &str, root: &str) -> String {
                 continue;
             }
             '!' => {
-                if let Some(link) = rest[1..].starts_with('[').then(|| parse_link(&rest[1..])).flatten() {
+                if let Some(link) = rest[1..]
+                    .starts_with('[')
+                    .then(|| parse_link(&rest[1..]))
+                    .flatten()
+                {
                     out.push_str(&format!(
                         "<img src=\"{}\" alt=\"{}\"{} loading=\"lazy\">",
                         escape_html(&resolve_url(link.url, root)),
@@ -648,7 +718,8 @@ mod tests {
 
     #[test]
     fn parses_frontmatter() {
-        let doc = parse_document("---\ntitle: \"Hi: there\"\ndate: 2026-01-02\ntags: [a, b]\n---\nBody");
+        let doc =
+            parse_document("---\ntitle: \"Hi: there\"\ndate: 2026-01-02\ntags: [a, b]\n---\nBody");
         assert_eq!(doc.frontmatter.get("title"), Some("Hi: there"));
         assert_eq!(doc.frontmatter.get("date"), Some("2026-01-02"));
         assert_eq!(doc.frontmatter.tags(), vec!["a", "b"]);
@@ -657,7 +728,8 @@ mod tests {
 
     #[test]
     fn parses_key_value_file() {
-        let conf = parse_key_values("# comment: ignored\ntitle: My Blog\n\nurl: https://example.com\n");
+        let conf =
+            parse_key_values("# comment: ignored\ntitle: My Blog\n\nurl: https://example.com\n");
         assert_eq!(conf.get("title"), Some("My Blog"));
         assert_eq!(conf.get("url"), Some("https://example.com"));
         assert!(conf.get("# comment").is_none());
@@ -672,17 +744,33 @@ mod tests {
 
     #[test]
     fn renders_blocks() {
-        let src = "# One\n## Two\n### Three\n\nline a\nline b\n\n- x\n- `y`\n";
+        let src = "line a\nline b\n\n- x\n- `y`\n";
         assert_eq!(
             md(src),
-            "<h1>One</h1>\n<h2>Two</h2>\n<h3>Three</h3>\n<p>line a line b</p>\n\
-             <ul>\n  <li>x</li>\n  <li><code>y</code></li>\n</ul>\n"
+            "<p>line a line b</p>\n<ul>\n  <li>x</li>\n  <li><code>y</code></li>\n</ul>\n"
         );
     }
 
     #[test]
+    fn renders_headings_with_ids() {
+        assert_eq!(
+            md("## Hello, `World`!"),
+            "<h2 id=\"hello-world\">Hello, <code>World</code>!<a class=\"heading-anchor\" \
+             href=\"#hello-world\" aria-hidden=\"true\" tabindex=\"-1\">#</a></h2>\n"
+        );
+        let html = md("# Rust & Go\n## はじめに 1\n## はじめに 1\n### !!!");
+        assert!(html.contains("id=\"rust-go\""));
+        assert!(html.contains("id=\"はじめに-1\""));
+        assert!(html.contains("id=\"はじめに-1-1\""));
+        assert!(html.contains("id=\"section\""));
+    }
+
+    #[test]
     fn joins_cjk_lines_without_space() {
-        assert_eq!(md("です。\n次の行\nEnglish\ntext"), "<p>です。次の行English text</p>\n");
+        assert_eq!(
+            md("です。\n次の行\nEnglish\ntext"),
+            "<p>です。次の行English text</p>\n"
+        );
     }
 
     #[test]
@@ -741,8 +829,14 @@ mod tests {
             render_inline("see [the `std` docs](https://doc.rust-lang.org/std/) & <b>", "../"),
             "see <a href=\"https://doc.rust-lang.org/std/\">the <code>std</code> docs</a> &amp; &lt;b&gt;"
         );
-        assert_eq!(render_inline("[not a link] `open", "../"), "[not a link] `open");
-        assert_eq!(render_inline("`` `tick` `` ``a`b``", ""), "<code>`tick`</code> <code>a`b</code>");
+        assert_eq!(
+            render_inline("[not a link] `open", "../"),
+            "[not a link] `open"
+        );
+        assert_eq!(
+            render_inline("`` `tick` `` ``a`b``", ""),
+            "<code>`tick`</code> <code>a`b</code>"
+        );
     }
 
     #[test]

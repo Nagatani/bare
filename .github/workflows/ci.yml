@@ -1,0 +1,47 @@
+# Check pull requests and non-main branches without deploying.
+# (Pushes to main are tested by pages.yml before it deploys.)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  test:
+    name: Test (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep "1.78" in sync with rust-version in Cargo.toml.
+        toolchain: [stable, "1.78"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Rust
+        run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal && rustup default ${{ matrix.toolchain }}
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build site
+        run: cargo run --locked -- build --clean --drafts --base-url https://example.github.io/bare/

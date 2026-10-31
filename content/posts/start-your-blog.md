@@ -80,7 +80,18 @@ description: 一覧や SNS に表示される短い説明
 `content/static/` には favicon（`favicon.svg`）も入っているので、差し替えれば自分のアイコンになります。
 独自ドメインを使う場合は、`content/static/CNAME` にドメイン名を書いておきます。
 
-デザインを変えたいときは `content/templates/` の HTML と CSS を編集します。
+デザインを変えたいときは `content/static/css/custom.css` に CSS を書きます。
+たとえば次のように書くと、アクセントカラーと本文の幅が変わります。
+
+```css
+:root {
+  --color-accent: light-dark(#2563eb, #60a5fa);
+  --content-width: 48rem;
+}
+```
+
+`custom.css` は本家では変更されないので、本家の更新を取り込んでも衝突しません。
+HTML の構造を変えたいときは `content/templates/` を編集します。
 
 公開したサイトには、次のファイルも自動で生成されます。
 

@@ -8,107 +8,18 @@
   <title>{{page_title}}</title>
   {{meta}}
   <link rel="icon" href="{{root}}favicon.svg" type="image/svg+xml">
-  <style>
-    :root {
-      --bg: #fdfdfc;
-      --fg: #1f2328;
-      --muted: #6b7280;
-      --accent: #b4532a;
-      --rule: #e7e5e4;
-      --code-bg: #f4f3f1;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #161616;
-        --fg: #e7e5e4;
-        --muted: #9ca3af;
-        --accent: #f08a5d;
-        --rule: #2e2e2e;
-        --code-bg: #222;
-      }
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--fg);
-      font: 17px/1.9 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    }
-    /* Wide enough for ~50 full-width characters or ~100 columns of code per line. */
-    .wrap { max-width: 56rem; margin: 0 auto; padding: 0 1.5rem; }
-    .site-header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      border-bottom: 1px solid var(--rule);
-      background: var(--bg);
-      background: color-mix(in srgb, var(--bg) 88%, transparent);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-    }
-    .site-header .wrap { display: flex; justify-content: space-between; align-items: baseline; padding-block: 2rem; }
-    .brand { font-weight: 700; letter-spacing: -0.02em; color: var(--fg); text-decoration: none; font-size: 1.15rem; }
-    .tagline { color: var(--muted); font-size: 0.85rem; }
-    /* `main.wrap` so it wins over the horizontal-only padding of `.wrap`. */
-    main.wrap { padding-block: 5rem 6rem; }
-    a { color: var(--accent); text-underline-offset: 0.2em; }
-    p { margin: 0 0 1.6em; }
-    h1, h2, h3 { line-height: 1.4; letter-spacing: -0.01em; }
-    h1 { font-size: 1.9rem; margin: 0 0 1rem; }
-    h2 { font-size: 1.35rem; margin: 4rem 0 1.25rem; }
-    h3 { font-size: 1.1rem; margin: 3rem 0 1rem; }
-    .post-body > :first-child { margin-top: 0; }
-    code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 4px; }
-    pre { background: var(--code-bg); margin: 2rem 0; padding: 1.5rem 1.5rem; border-radius: 8px; overflow-x: auto; line-height: 1.7; }
-    pre code { background: none; padding: 0; font-size: 0.85rem; }
-    ul, ol { padding-left: 1.5rem; margin: 0 0 1.6em; }
-    img { max-width: 100%; height: auto; display: block; margin: 2rem auto; border-radius: 8px; }
-    blockquote { margin: 2rem 0; padding: 0.25rem 0 0.25rem 1.25rem; border-left: 3px solid var(--rule); color: var(--muted); }
-    blockquote > :last-child { margin-bottom: 0; }
-    hr { border: 0; border-top: 1px solid var(--rule); margin: 3.5rem 0; }
-    .table-wrap { overflow-x: auto; margin: 2rem 0; }
-    table { border-collapse: collapse; width: 100%; font-size: 0.92rem; line-height: 1.6; }
-    th, td { padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
-    th { font-weight: 600; border-bottom-width: 2px; white-space: nowrap; }
-    del { color: var(--muted); }
-    li + li { margin-top: 0.6em; }
-    .meta { color: var(--muted); font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: center; margin: 0; }
-    .tags { list-style: none; padding: 0; margin: 0; display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
-    .tags li + li { margin-top: 0; }
-    .tag { font-size: 0.75rem; border: 1px solid var(--rule); border-radius: 999px; padding: 0.1rem 0.7rem; color: var(--muted); }
-    .post-header { margin-bottom: 3.5rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--rule); }
-    .page-intro { margin-bottom: 3rem; }
-    .post-list { list-style: none; padding: 0; margin: 0; }
-    .post-list li + li { margin-top: 0; }
-    .post-item { display: grid; grid-template-columns: 7.5rem 1fr; gap: 0.75rem 1.25rem; padding: 2rem 0; border-bottom: 1px solid var(--rule); }
-    .post-item:first-child { border-top: 1px solid var(--rule); }
-    .post-item time { color: var(--muted); font-family: var(--mono); font-size: 0.85rem; padding-top: 0.15rem; }
-    .post-item a { font-weight: 600; text-decoration: none; }
-    .post-item a:hover { text-decoration: underline; }
-    .post-item .tags, .post-item .post-desc { grid-column: 2; }
-    .post-desc { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.7; }
-    .lead { color: var(--muted); margin: 0 0 1.25rem; }
-    .lead:empty { display: none; }
-    .back { margin: 5rem 0 0; padding-top: 2rem; border-top: 1px solid var(--rule); }
-    .site-footer { border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.8rem; }
-    .site-footer .wrap { padding-block: 2.5rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem; }
-    @media (max-width: 480px) {
-      main.wrap { padding-block: 3.5rem 4rem; }
-      h2 { margin-top: 3rem; }
-      .post-item { grid-template-columns: 1fr; gap: 0.5rem; padding: 1.5rem 0; }
-      .post-item .tags, .post-item .post-desc { grid-column: 1; }
-    }
-  </style>
+  <link rel="stylesheet" href="{{root}}css/style.css">
+  <link rel="stylesheet" href="{{root}}css/custom.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">本文へ移動</a>
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="{{root}}index.html">{{site_title}}</a>
       <span class="tagline">{{site_description}}</span>
     </div>
   </header>
-  <main class="wrap">
+  <main id="main" class="site-main wrap">
 {{content}}
   </main>
   <footer class="site-footer">

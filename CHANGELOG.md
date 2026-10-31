@@ -8,6 +8,11 @@
 ## Unreleased
 
 ### 追加
+- CSS を `content/static/css/style.css` に分離し、`@layer`・`light-dark()`・CSS ネスト・コンテナクエリで再構成
+- 自分用の上書きスタイル `content/static/css/custom.css`（本家では変更しません）
+- 見出しに `id` と `#` リンクを付与（ページ内リンク用）
+- 「本文へ移動」スキップリンク、印刷用スタイル
+- PR とブランチ用の CI（fmt・clippy・テスト。stable と Rust 1.78）と Dependabot
 - Atom フィード `feed.xml` と `sitemap.xml` を生成（公開 URL が分かるときのみ。GitHub Actions では自動）
 - OGP / Twitter Card / canonical の `<meta>` タグを `{{meta}}` で出力
 - 記事の frontmatter に `description`・`image`・`draft` を追加
@@ -19,10 +24,15 @@
 
 ### テンプレートの変更
 - `layout.html`
+  - `<style>...</style>` を削除し、`<link rel="stylesheet" href="{{root}}css/style.css">` と
+    `<link rel="stylesheet" href="{{root}}css/custom.css">` に置き換え（自分の CSS は custom.css へ移す）
+  - `<body>` 直後に `<a class="skip-link" href="#main">本文へ移動</a>` を追加
+  - `<main class="wrap">` → `<main id="main" class="site-main wrap">`
   - `<title>{{title}} · {{site_title}}</title>` → `<title>{{page_title}}</title>`
   - `<meta name="description" content="{{site_description}}">` を削除し、代わりに `{{meta}}` を追加
-  - CSS に `.post-desc` と `.lead` を追加
-- `post.html`: `<h1>` の直後に `<p class="lead">{{description}}</p>` を追加
+- `post.html`
+  - `<h1>` の直後に `<p class="lead">{{description}}</p>` を追加
+  - `<div class="post-body">` → `<div class="post-body prose">`
 - `404.html`: 新規（任意）
 
 ### ワークフロー

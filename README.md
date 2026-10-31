@@ -107,6 +107,7 @@ GitHub の **Sync fork** か、`git fetch upstream && git merge upstream/main` �
 - 古いテンプレートのままでもビルドが通るようにする（新しいテンプレートは任意にし、新しいトークンは書かれていなければ出力しないだけにする）
 - `site.conf` の新しいキーには必ず既定値を持たせる
 - サンプル記事と `site.conf` の変更は最小限にする（フォーク側で消されたり書き換えられたりしている前提）
+- `content/static/css/custom.css` は空のまま変更しない（フォーク側のカスタマイズ用）
 - テンプレートを変えたら CHANGELOG の「テンプレートの変更」に差分を書く
 
 ## ディレクトリ構成
@@ -123,6 +124,11 @@ content/
   posts/        記事（*.md。0 本でもビルド可）
   templates/    layout.html / post.html / index.html / 404.html（任意）
   static/       dist/ にそのままコピーされるファイル（画像・favicon など）
+    css/style.css   既定のテーマ（@layer で整理）
+    css/custom.css  自分用の上書きスタイル（本家は変更しない）
+.github/
+  workflows/ci.yml    PR とブランチの lint・テスト（stable と最小対応版）
+  dependabot.yml      Actions の版を毎週更新
 dist/           生成物（git 管理外）
 .github/workflows/pages.yml   GitHub Pages へのデプロイ
 ```
@@ -173,7 +179,30 @@ draft: true
 `/images/a.png` のように `/` で始まる URL は、ページからの相対パスに変換されます。
 GitHub Pages のサブパス（`https://<user>.github.io/<repo>/`）で公開しても画像やリンクが切れません。
 
+見出しには自動で `id` が付き、ホバーで `#` リンクが表示されます（例: `posts/hello-world.html#できること`）。
+同じ見出しが複数あると `-1`, `-2` が付きます。
+
 未対応: 入れ子のリスト、リスト項目の複数行、生の HTML（エスケープされて表示されます）。
+
+## スタイル（CSS）
+
+CSS は `content/static/css/` にあり、`dist/css/` にコピーされます。
+
+- `style.css` … 既定のテーマ。`@layer reset, tokens, base, layout, components, utilities, overrides` の順に優先度が上がります。
+  色・余白・幅などは `tokens` レイヤーの CSS 変数（`--color-accent`, `--content-width` など）にまとめています。
+  ライト / ダークは `light-dark()` で1つの変数に両方の値を持たせています。
+- `custom.css` … 自分用の上書き。レイヤーの外に書いたルールは `style.css` のどのルールよりも優先されるので、
+  `!important` や長いセレクタは不要です。本家はこのファイルを変更しないので、Sync fork でも衝突しません。
+
+```css
+/* custom.css の例: アクセントカラーと本文幅を変える */
+:root {
+  --color-accent: light-dark(#2563eb, #60a5fa);
+  --content-width: 48rem;
+}
+```
+
+`light-dark()`・CSS ネスト・コンテナクエリなど、2024 年以降の主要ブラウザで使える機能を前提にしています。
 
 ## テンプレート
 
