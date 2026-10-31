@@ -63,12 +63,7 @@ pub fn parse_document(source: &str) -> Document {
             closed = true;
             break;
         }
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim();
-            if !key.is_empty() && !key.starts_with('#') {
-                fields.insert(key.to_string(), unquote(value.trim()).to_string());
-            }
-        }
+        insert_field(&mut fields, line);
     }
     if !closed {
         return whole();
@@ -77,6 +72,25 @@ pub fn parse_document(source: &str) -> Document {
     Document {
         frontmatter: Frontmatter { fields },
         body: lines.collect::<Vec<_>>().join("\n"),
+    }
+}
+
+/// Parses a whole file of `key: value` lines, such as `site.conf`.
+pub fn parse_key_values(text: &str) -> Frontmatter {
+    let mut fields = HashMap::new();
+    for line in text.lines() {
+        insert_field(&mut fields, line);
+    }
+    Frontmatter { fields }
+}
+
+/// Inserts one `key: value` line; lines without a colon or starting with `#` are ignored.
+fn insert_field(fields: &mut HashMap<String, String>, line: &str) {
+    if let Some((key, value)) = line.split_once(':') {
+        let key = key.trim();
+        if !key.is_empty() && !key.starts_with('#') {
+            fields.insert(key.to_string(), unquote(value.trim()).to_string());
+        }
     }
 }
 
@@ -265,6 +279,14 @@ mod tests {
         assert_eq!(doc.frontmatter.get("date"), Some("2026-01-02"));
         assert_eq!(doc.frontmatter.tags(), vec!["a", "b"]);
         assert_eq!(doc.body, "Body");
+    }
+
+    #[test]
+    fn parses_key_value_file() {
+        let conf = parse_key_values("# comment: ignored\ntitle: My Blog\n\nurl: https://example.com\n");
+        assert_eq!(conf.get("title"), Some("My Blog"));
+        assert_eq!(conf.get("url"), Some("https://example.com"));
+        assert!(conf.get("# comment").is_none());
     }
 
     #[test]

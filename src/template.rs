@@ -10,7 +10,7 @@ use std::io;
 use std::path::Path;
 
 /// Values available to a template, keyed by placeholder name.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Context {
     values: HashMap<String, String>,
 }

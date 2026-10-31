@@ -91,6 +91,7 @@ impl Templates {
 /// Builds the whole site described by `config`.
 pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     let templates = Templates::load(&config.content_dir.join("templates"))?;
+    let site = load_site_context(&config.content_dir.join("site.conf"))?;
     let mut posts = load_posts(&config.content_dir.join("posts"))?;
     // Newest first; ISO dates (YYYY-MM-DD) sort correctly as strings.
     posts.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| a.slug.cmp(&b.slug)));
@@ -112,14 +113,16 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
 
     for post in &posts {
         let body = templates.post.render(
-            &Context::new()
+            &site
+                .clone()
                 .with("title", escape_html(&post.title))
                 .with("date", escape_html(&post.date))
                 .with("tags", render_tags(&post.tags))
                 .with("content", post.html.as_str()),
         );
         let page = templates.layout.render(
-            &Context::new()
+            &site
+                .clone()
                 .with("title", escape_html(&post.title))
                 .with("root", "../")
                 .with("content", body),
@@ -130,12 +133,14 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     }
 
     let body = templates.index.render(
-        &Context::new()
+        &site
+            .clone()
             .with("post_list", render_post_list(&posts))
             .with("post_count", posts.len().to_string()),
     );
     let page = templates.layout.render(
-        &Context::new()
+        &site
+            .clone()
             .with("title", "Home")
             .with("root", "")
             .with("content", body),
@@ -171,8 +176,28 @@ fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
     Ok(())
 }
 
+/// Reads `site.conf` into the `{{site_*}}` values shared by every template.
+/// The file is optional; missing keys fall back to defaults.
+fn load_site_context(path: &Path) -> Result<Context, BuildError> {
+    let conf = match fs::read_to_string(path) {
+        Ok(text) => parser::parse_key_values(&text),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Default::default(),
+        Err(err) => return Err(err).at(path),
+    };
+    let value = |key: &str, default: &str| escape_html(conf.get(key).unwrap_or(default));
+    Ok(Context::new()
+        .with("site_title", value("title", "bare"))
+        .with("site_description", value("description", ""))
+        .with("site_author", value("author", ""))
+        .with("site_lang", value("lang", "ja")))
+}
+
 /// Reads and renders every `*.md` file directly inside `dir`.
+/// A missing directory means no posts yet (git does not keep empty directories).
 fn load_posts(dir: &Path) -> Result<Vec<Post>, BuildError> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
     let mut paths = Vec::new();
     for entry in fs::read_dir(dir).at(dir)? {
         let path = entry.at(dir)?.path();

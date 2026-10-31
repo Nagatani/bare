@@ -18,9 +18,12 @@ Markdown を書いて `cargo run` するだけで、`dist/` に HTML が出力�
 
 ## はじめかた
 
+[Nagatani/Bare](https://github.com/Nagatani/Bare) をフォークすれば、GitHub Pages ですぐに自分のブログを公開できます。
+手順は [bare をフォークして自分のブログを始める](start-your-blog.html) にまとめました。
+
+手元で試すだけなら、次の 2 行で十分です。
+
 ```sh
 cargo run
 open dist/index.html
 ```
-
-ソースは [GitHub](https://github.com/) に置いて、`dist/` をそのまま静的ホスティングに載せれば公開完了です。
