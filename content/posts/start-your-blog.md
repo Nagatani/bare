@@ -2,6 +2,7 @@
 title: bare をフォークして自分のブログを始める
 date: 2026-11-01
 tags: [bare, guide, github-pages]
+description: リポジトリをフォークして、GitHub Pages で自分のブログを公開するまでの手順。
 ---
 
 bare は「フォークして、そのまま自分のブログにする」ことを想定したリポジトリです。
@@ -53,6 +54,7 @@ lang: ja
 title: はじめての記事
 date: 2026-11-01
 tags: [diary]
+description: 一覧や SNS に表示される短い説明
 ---
 
 ## 見出し
@@ -63,7 +65,10 @@ tags: [diary]
 - 項目
 ```
 
-- `date` は `YYYY-MM-DD` で書くと、一覧が新着順に並びます。
+- `date` は `YYYY-MM-DD` で書くと、一覧が新着順に並びます（形式が違うとビルド時に警告が出ます）。
+- `description` は一覧ページ・検索結果・SNS のプレビュー・RSS の要約に使われます（省略可）。
+- `image: /images/cover.png` を書くと、SNS で共有したときのプレビュー画像になります（省略可）。
+- `draft: true` を書いた記事は公開されません。手元で確認するときは `cargo run -- --drafts` を使います。
 - サンプル記事（この記事を含む 3 本）は削除して構いません。記事が 0 本になってもビルドは通ります。
 - 使える記法は [Hello, World](hello-world.html) の表にまとめています。
 
@@ -76,6 +81,14 @@ tags: [diary]
 独自ドメインを使う場合は、`content/static/CNAME` にドメイン名を書いておきます。
 
 デザインを変えたいときは `content/templates/` の HTML と CSS を編集します。
+
+公開したサイトには、次のファイルも自動で生成されます。
+
+| ファイル | 用途 |
+| --- | --- |
+| `feed.xml` | Atom フィード。RSS リーダーで購読できます |
+| `sitemap.xml` | 検索エンジン向けのページ一覧 |
+| `404.html` | 存在しない URL を開いたときのページ（`content/templates/404.html`） |
 
 ## 6. 手元でプレビューする（任意）
 
@@ -104,5 +117,10 @@ git fetch upstream
 git merge upstream/main
 ```
 
-`content/templates/` を大きく書き換えている場合は、テンプレートで衝突することがあります。
-そのときは自分の版を残しつつ、必要な変更だけを取り込んでください。
+衝突しやすいのは、自分で書き換えた `content/site.conf` と `content/templates/`、それに削除したサンプル記事です。
+
+- 削除したサンプル記事が衝突したら、`git rm content/posts/<ファイル名>` で削除したままにします
+- `site.conf` やテンプレートが衝突したら、自分の版を残します
+
+本家の [CHANGELOG.md](https://github.com/Nagatani/bare/blob/main/CHANGELOG.md) の「テンプレートの変更」を見て、必要な差分だけを手で反映してください。
+反映しなくてもビルドは通ります（新しい機能が出力されないだけです）。

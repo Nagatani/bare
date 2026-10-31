@@ -36,6 +36,12 @@ cargo run -- build --content content --out dist
 # dist/ を丸ごと削除してから作り直す
 cargo run -- --clean
 
+# 下書き（draft: true）も出力して確認する
+cargo run -- --drafts
+
+# 公開 URL を指定して feed.xml / sitemap.xml / OGP の絶対 URL も生成する
+cargo run -- --base-url https://<user>.github.io/bare/
+
 # テスト
 cargo test
 ```
@@ -69,6 +75,40 @@ Pages が未設定のまま実行された場合は、最初のステップで�
 **GitHub Actions** に設定してください。公開 URL は `https://<user>.github.io/<repo>/` です。
 リンクはすべて相対パスなので、サブパス配下でもそのまま動作します。
 
+ワークフローは `configure-pages` が返す公開 URL（独自ドメインを含む）を `--base-url` で渡します。
+そのため Actions でのビルドでは、`feed.xml`・`sitemap.xml`・OGP の絶対 URL が設定なしで生成されます。
+手元のビルドで公開 URL が分からない場合、これらは生成されません（ログに note が表示されます）。
+
+### 生成されるファイル
+
+| ファイル | 内容 |
+| --- | --- |
+| `index.html` | 記事一覧（新着順） |
+| `posts/<ファイル名>.html` | 各記事 |
+| `404.html` | 存在しない URL 用のページ（`templates/404.html` がある場合） |
+| `feed.xml` | Atom フィード（最新 20 件。公開 URL が分かる場合） |
+| `sitemap.xml` | サイトマップ（公開 URL が分かる場合） |
+| その他 | `content/static/` からのコピー |
+
+## 本家の更新を取り込む（フォークした人向け）
+
+GitHub の **Sync fork** か、`git fetch upstream && git merge upstream/main` で取り込みます。
+変更内容とテンプレートに必要な差分は [CHANGELOG.md](CHANGELOG.md) にまとめています。
+
+衝突しやすいのは、自分で編集・削除したサンプル記事、`content/site.conf`、`content/templates/` です。
+
+- 削除したサンプル記事との衝突（modify/delete）→ `git rm content/posts/<ファイル>` で削除したままにする
+- `site.conf` やテンプレートとの衝突 → 自分の版を残し、CHANGELOG の「テンプレートの変更」を手で反映する
+
+### 本家をメンテナンスするときの方針
+
+フォークを壊さないため、次のことを守ります。
+
+- 古いテンプレートのままでもビルドが通るようにする（新しいテンプレートは任意にし、新しいトークンは書かれていなければ出力しないだけにする）
+- `site.conf` の新しいキーには必ず既定値を持たせる
+- サンプル記事と `site.conf` の変更は最小限にする（フォーク側で消されたり書き換えられたりしている前提）
+- テンプレートを変えたら CHANGELOG の「テンプレートの変更」に差分を書く
+
 ## ディレクトリ構成
 
 ```text
@@ -77,10 +117,11 @@ src/
   parser.rs     Frontmatter と簡易 Markdown パーサー
   template.rs   {{placeholder}} 置換エンジン
   site.rs       記事探索・HTML 生成・dist/ 出力
+  feed.rs       Atom フィードと sitemap の生成
 content/
-  site.conf     サイト名・説明・著者・言語の設定
+  site.conf     サイト名・説明・著者・言語・公開 URL などの設定
   posts/        記事（*.md。0 本でもビルド可）
-  templates/    layout.html / post.html / index.html
+  templates/    layout.html / post.html / index.html / 404.html（任意）
   static/       dist/ にそのままコピーされるファイル（画像・favicon など）
 dist/           生成物（git 管理外）
 .github/workflows/pages.yml   GitHub Pages へのデプロイ
@@ -93,6 +134,9 @@ dist/           生成物（git 管理外）
 title: 記事タイトル
 date: 2026-10-31
 tags: [rust, ssg]
+description: 一覧・検索結果・SNS・RSS に表示される説明（任意）
+image: /images/cover.png
+draft: true
 ---
 
 ## 見出し
@@ -104,6 +148,9 @@ tags: [rust, ssg]
 
 - `date` は `YYYY-MM-DD` 形式で書くと、一覧が新着順に正しく並びます。
 - `tags` は `[a, b]` と `a, b` のどちらの書き方でも構いません。
+- `image` は SNS で共有したときのプレビュー画像です（任意。`content/static/` に置いた画像を指定）。
+- `draft: true` の記事は出力されません（`--drafts` で出力）。
+- ファイル名がそのまま URL になるので、英数字とハイフンにしておくのがおすすめです。
 
 ### 対応する Markdown
 
@@ -138,13 +185,16 @@ GitHub Pages のサブパス（`https://<user>.github.io/<repo>/`）で公開し
 | `description` | `{{site_description}}` | （空） |
 | `author` | `{{site_author}}` | （空） |
 | `lang` | `{{site_lang}}` | `ja` |
+| `base_url` | `{{site_url}}` | （空。CI では自動） |
+| `image` | — | （空）。OGP の既定画像 |
 
 テンプレートごとに使えるトークンは次のとおりです。
 
 | ファイル | 使えるトークン |
 | --- | --- |
-| `layout.html` | `{{title}}`, `{{content}}`, `{{root}}`（`index.html` へ戻る相対パス） |
-| `post.html` | `{{title}}`, `{{date}}`, `{{tags}}`, `{{content}}` |
+| `layout.html` | `{{page_title}}`（`<title>` 用）, `{{title}}`, `{{meta}}`（description・OGP・canonical・フィードの `<meta>`/`<link>`）, `{{content}}`, `{{root}}`（サイトのルートへの相対パス） |
+| `post.html` | `{{title}}`, `{{date}}`, `{{description}}`, `{{tags}}`, `{{content}}` |
 | `index.html` | `{{post_list}}`, `{{post_count}}` |
+| `404.html` | `{{root}}`（`/bare/` のようなルートからの絶対パス） |
 
 未定義のトークンはそのまま出力されるので、タイプミスに気づけます。本文中に書かれた `{{...}}` は置換されません。

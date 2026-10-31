@@ -2,6 +2,7 @@
 title: Hello, World
 date: 2026-10-01
 tags: [bare, intro]
+description: bare の紹介と、対応している Markdown 記法の一覧です。
 ---
 
 ## bare へようこそ

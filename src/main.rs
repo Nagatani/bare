@@ -1,5 +1,6 @@
 //! bare — a zero-dependency, minimalist static site generator.
 
+mod feed;
 mod parser;
 mod site;
 mod template;
@@ -21,6 +22,9 @@ OPTIONS:
     -c, --content <DIR>   Source directory with posts/ and templates/  [default: content]
     -o, --out <DIR>       Output directory                             [default: dist]
         --clean           Delete the whole output directory before building
+        --drafts          Include posts marked `draft: true`
+        --base-url <URL>  Public site URL for feed, sitemap and OGP
+                          [default: base_url in site.conf]
     -h, --help            Print this help
     -V, --version         Print version";
 
@@ -35,6 +39,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
         content_dir: PathBuf::from("content"),
         out_dir: PathBuf::from("dist"),
         clean: false,
+        drafts: false,
+        base_url: None,
     };
     let mut args = args.into_iter();
 
@@ -44,14 +50,15 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
             "-h" | "--help" | "help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
             "--clean" => config.clean = true,
-            "-c" | "--content" | "-o" | "--out" => {
+            "--drafts" => config.drafts = true,
+            "-c" | "--content" | "-o" | "--out" | "--base-url" => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("missing value for `{arg}`"))?;
-                if matches!(arg.as_str(), "-c" | "--content") {
-                    config.content_dir = PathBuf::from(value);
-                } else {
-                    config.out_dir = PathBuf::from(value);
+                match arg.as_str() {
+                    "-c" | "--content" => config.content_dir = PathBuf::from(value),
+                    "-o" | "--out" => config.out_dir = PathBuf::from(value),
+                    _ => config.base_url = Some(value),
                 }
             }
             other => return Err(format!("unknown argument `{other}`")),
@@ -90,8 +97,18 @@ fn main() -> ExitCode {
             for path in &report.written {
                 println!("  wrote {}", path.display());
             }
+            for note in &report.notes {
+                println!("  note: {note}");
+            }
+            for warning in &report.warnings {
+                eprintln!("  warning: {warning}");
+            }
+            let drafts = match report.drafts_skipped {
+                0 => String::new(),
+                n => format!(", skipped {n} drafts"),
+            };
             println!(
-                "bare: generated {} files ({} posts + index), copied {} static files in {} ms",
+                "bare: generated {} files ({} posts){drafts}, copied {} static files in {} ms",
                 report.written.len(),
                 report.posts,
                 report.static_files,

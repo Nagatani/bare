@@ -2,6 +2,7 @@
 title: "クレートなしで Rust を書く"
 date: 2026-10-15
 tags: rust, std, minimalism
+description: 外部クレートを使わず、標準ライブラリだけで Rust のツールを書く利点とコツ。
 ---
 
 ## なぜ依存ゼロなのか

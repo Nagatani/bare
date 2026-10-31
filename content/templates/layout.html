@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="generator" content="bare">
-  <meta name="description" content="{{site_description}}">
   <meta name="author" content="{{site_author}}">
-  <title>{{title}} · {{site_title}}</title>
+  <title>{{page_title}}</title>
+  {{meta}}
   <link rel="icon" href="{{root}}favicon.svg" type="image/svg+xml">
   <style>
     :root {
@@ -86,7 +86,10 @@
     .post-item time { color: var(--muted); font-family: var(--mono); font-size: 0.85rem; padding-top: 0.15rem; }
     .post-item a { font-weight: 600; text-decoration: none; }
     .post-item a:hover { text-decoration: underline; }
-    .post-item .tags { grid-column: 2; }
+    .post-item .tags, .post-item .post-desc { grid-column: 2; }
+    .post-desc { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.7; }
+    .lead { color: var(--muted); margin: 0 0 1.25rem; }
+    .lead:empty { display: none; }
     .back { margin: 5rem 0 0; padding-top: 2rem; border-top: 1px solid var(--rule); }
     .site-footer { border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.8rem; }
     .site-footer .wrap { padding-block: 2.5rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem; }
@@ -94,7 +97,7 @@
       main.wrap { padding-block: 3.5rem 4rem; }
       h2 { margin-top: 3rem; }
       .post-item { grid-template-columns: 1fr; gap: 0.5rem; padding: 1.5rem 0; }
-      .post-item .tags { grid-column: 1; }
+      .post-item .tags, .post-item .post-desc { grid-column: 1; }
     }
   </style>
 </head>
