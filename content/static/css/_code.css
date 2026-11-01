@@ -1,0 +1,60 @@
+/* Inline code, code blocks, build-time syntax highlighting and <kbd>. */
+@layer base {
+  :is(code, kbd, samp) {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+  }
+
+  /* Inline `code`. */
+  code {
+    padding: 0.15em 0.4em;
+    border-radius: var(--radius-sm);
+    background: var(--code-bg);
+    /* Keep short snippets such as `cargo run` on one line. */
+    overflow-wrap: anywhere;
+  }
+
+  /* ```fenced``` code blocks. */
+  pre {
+    margin-block: var(--space-5);
+    padding: var(--space-4) 1.5rem;
+    border: 1px solid var(--code-border);
+    border-radius: var(--radius);
+    background: var(--code-bg);
+    overflow-x: auto;
+    line-height: var(--leading-code);
+    tab-size: 4;
+
+    & code {
+      padding: 0;
+      background: none;
+      font-size: var(--text-code);
+      overflow-wrap: normal;
+    }
+  }
+
+  kbd {
+    padding: 0.1em 0.45em;
+    border: 1px solid var(--color-rule);
+    border-block-end-width: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    font-size: 0.85em;
+  }
+
+  /* Token colors (classes from src/highlight.rs). */
+  pre code {
+    & .hl-kw { color: var(--hl-keyword); }
+    & .hl-str { color: var(--hl-string); }
+    & .hl-com { color: var(--hl-comment); font-style: italic; }
+    & :is(.hl-num, .hl-lit) { color: var(--hl-number); }
+    & :is(.hl-ty, .hl-var) { color: var(--hl-type); }
+    & .hl-fn { color: var(--hl-function); }
+    & .hl-mac { color: var(--hl-macro); }
+    & :is(.hl-key, .hl-attr) { color: var(--hl-key); }
+    & .hl-tag { color: var(--hl-tag); }
+    & .hl-meta { color: var(--hl-comment); }
+    & .hl-add { color: var(--hl-added); }
+    & .hl-del { color: var(--hl-removed); }
+  }
+}

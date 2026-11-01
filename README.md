@@ -25,7 +25,7 @@ GitHub Actions はこのチェックに通ったときだけデプロイする�
 | --- | --- |
 | Lighthouse | 全 7 ページ（記事・固定ページ・一覧・タグ・アーカイブ）で 4 項目すべて 100（モバイル / デスクトップとも） |
 | JavaScript | 0 バイト |
-| トップページの転送量（HTML + CSS、gzip） | 約 6KB |
+| トップページの転送量（HTML + CSS、gzip） | 約 5KB |
 | 画像の `width` / `height` | 自動で付与（表示時にレイアウトがずれない） |
 | コードのシンタックスハイライト | ビルド時に生成（JavaScript 不要） |
 
@@ -219,23 +219,44 @@ frontmatter に `nav: 1` のように番号を書くと、ヘッダーのナビ�
 
 ## スタイル（CSS）
 
-CSS は `content/static/css/` にあり、`dist/css/` にコピーされます。
+CSS は `content/static/css/` にあります。テーマは役割ごとのファイルに分かれていて、
+ビルド時に bare が `style.css` の `@import` を展開し、`dist/css/style.css` の 1 ファイルにまとめます
+（ブラウザがファイルを順番に取りに行く待ち時間が発生しません）。`_` で始まるファイルは部品で、単体では公開されません。
+出力する CSS からはコメントと空行を取り除くので、ソースには説明を気兼ねなく書けます。
 
-- `style.css` … 既定のテーマ。`@layer reset, tokens, base, layout, components, utilities, overrides` の順に優先度が上がります。
-  色・余白・幅などは `tokens` レイヤーの CSS 変数（`--color-accent`, `--content-width`, `--hl-keyword` など）にまとめています。
-  ライト / ダークは `light-dark()` で1つの変数に両方の値を持たせています。
-- `custom.css` … 自分用の上書き。レイヤーの外に書いたルールは `style.css` のどのルールよりも優先されるので、
-  `!important` や長いセレクタは不要です。本家はこのファイルを変更しないので、Sync fork でも衝突しません。
+| ファイル | 内容 | レイヤー |
+| --- | --- | --- |
+| `style.css` | 入口。レイヤーの順番と `@import` の一覧だけを書く | — |
+| `_tokens.css` | 色・フォント・余白・幅などの CSS 変数。**見た目を変えるときはまずここを見る** | `tokens` |
+| `_reset.css` | ブラウザ既定のスタイルの打ち消し | `reset` |
+| `_base.css` | 見出し・段落・リスト・引用・表などの HTML 要素 | `base` |
+| `_code.css` | インラインコード・コードブロック・シンタックスハイライト・`<kbd>` | `base` |
+| `_layout.css` | ヘッダー・本文エリア・フッター・印刷用 | `layout` |
+| `_prose.css` | 記事本文の付加要素（見出しの `#`・目次・脚注・タスクリスト） | `prose` |
+| `_components.css` | ナビゲーション・記事一覧・タグ・ページ送り・アーカイブ | `components` |
+| `_utilities.css` | `.visually-hidden` などの補助クラス | `utilities` |
+| `custom.css` | 自分用の上書き（本家は変更しない） | レイヤーなし（最優先） |
+
+- 優先度は `@layer reset, tokens, base, layout, prose, components, utilities` の順に上がり、
+  レイヤーの外に書いた `custom.css` のルールはそのすべてに勝ちます。`!important` や長いセレクタは不要です。
+- ライト / ダークは `light-dark()` で 1 つの変数に両方の値を持たせています。
+- 配色は技術文書の読みやすさを優先しています。リンクは昔ながらの青（訪問済みは紫）で、
+  本文・補助テキスト・リンク・ハイライトの文字色はすべて、背景とコードの背景の両方に対して
+  コントラスト比 4.5:1（WCAG AA）以上です。本文中のリンクは色だけに頼らないよう下線付きです。
+- `@import` の展開は、`@import "_x.css";` / `@import url("_x.css");` の形のローカルファイルだけが対象です。
+  `layer()` やメディアクエリ付き、外部 URL の `@import` はそのまま残します。
 
 ```css
-/* custom.css の例: アクセントカラーと本文幅を変える */
+/* custom.css の例: リンクの色と本文幅を変える */
 :root {
-  --color-accent: light-dark(#2563eb, #60a5fa);
+  --color-link: light-dark(#2563eb, #60a5fa);
+  --color-link-visited: light-dark(#7c3aed, #a78bfa);
   --content-width: 48rem;
 }
 ```
 
-`light-dark()`・CSS ネスト・コンテナクエリなど、2024 年以降の主要ブラウザで使える機能を前提にしています。
+使える変数は `_tokens.css` にすべて並んでいます。
+`light-dark()`・CSS ネスト・コンテナクエリ・`:has()` など、2024 年以降の主要ブラウザで使える機能を前提にしています。
 
 ## テンプレート
 
@@ -300,6 +321,7 @@ src/
   feed.rs       Atom フィードと sitemap
   images.rs     画像ファイルから縦横サイズを読む
   assets.rs     CSS / JS の URL にハッシュを付ける（キャッシュ対策）
+  css.rs        CSS の @import をビルド時に展開する
   text.rs       抜粋と読了時間
   scaffold.rs   bare new（記事の雛形）
   check.rs      リンク切れ・アンカー・alt の検査
@@ -310,7 +332,8 @@ content/
   pages/        固定ページ（*.md）
   templates/    layout / post / index（必須）、page / tag / tags / archive / 404（任意）
   static/       dist/ にそのままコピーされるファイル
-    css/style.css   既定のテーマ（@layer で整理）
+    css/style.css   既定のテーマの入口（ビルド時に _*.css を展開して 1 ファイルに）
+    css/_*.css      テーマの部品（_tokens.css に色・フォント・余白の変数）
     css/custom.css  自分用の上書きスタイル（本家は変更しない）
 .github/
   workflows/pages.yml  テスト → check → GitHub Pages へデプロイ

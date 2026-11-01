@@ -10,6 +10,8 @@
 ### 追加
 - 記事一覧のページ分割: `site.conf` の `per_page` 件ごとに `index.html`, `page/2.html`, ... に分け、`{{pagination}}` でページ送りを表示
   （`per_page` が空なら従来どおり 1 ページ。`{{pagination}}` のない `index.html` で `per_page` を設定するとビルド時に警告）
+- CSS の `@import` をビルド時に展開: `style.css` から `@import "_x.css";` で読み込んだファイルを 1 つにまとめて出力。
+  `_` で始まる CSS は部品として扱い、単体では出力しない。出力する CSS からはコメントと空行を取り除く
 - HTML の入力: 行頭の `<div>`・`<details>`・`<iframe>` などのブロックと、段落内の `<kbd>`・`<ruby>` などのタグをそのまま出力。
   `<https://…>` の自動リンク。実在する HTML 要素名だけを対象にするので、`Vec<u8>` などは従来どおり文字として表示
 - `bare new <名前>`: 今日の日付と `draft: true` 入りの記事ファイルを作成（`--page` で固定ページ）
@@ -26,7 +28,6 @@
 - Markdown の画像に `width` / `height` を自動付与（PNG・GIF・JPEG・WebP・SVG）
 - テンプレートに未定義のプレースホルダーがあると警告
 - CSS を `content/static/css/style.css` に分離し、`@layer`・`light-dark()`・CSS ネスト・コンテナクエリで再構成
-- `--color-muted` の明るいテーマの色を少し濃く（`#6b7280` → `#646b78`。背景色付きの要素でもコントラスト比 4.5:1 を満たすため）
 - 自分用の上書きスタイル `content/static/css/custom.css`（本家では変更しません）
 - 見出しに `id` と `#` リンクを付与（ページ内リンク用）
 - 「本文へ移動」スキップリンク、印刷用スタイル
@@ -41,6 +42,14 @@
 - 日本語やスペースを含むファイル名のリンクを URL エンコード
 
 ### 変更
+- 既定のテーマ `style.css` を役割ごとのファイル（`_tokens.css`・`_base.css`・`_code.css`・`_layout.css`・
+  `_prose.css`・`_components.css` など）に分割。`style.css` は入口として `@import` の一覧だけを持つ。
+  `style.css` を直接編集していたフォークは、本家の更新を取り込むときに衝突します。変更は `custom.css` に移してください
+- 配色を技術文書の読みやすさ重視に変更: リンクは昔ながらの青（訪問済みは紫）、アクセントもリンクと同じ青に統一。
+  コードブロックに枠線、表の見出しと引用に背景色、記事の `h2` に下線、`<mark>` の色を追加。
+  文字色はすべて背景・コード背景に対してコントラスト比 4.5:1 以上。ファビコンと図も青に変更
+- 変数を追加: `--color-link`・`--color-link-visited`・`--color-link-hover`・`--color-mark`・`--code-bg`・`--code-border`・`--text-code`。
+  `--color-accent` は残しています（既定値は `--color-link` と同じ）。レイヤー `overrides` は使われていなかったため削除し、`prose` を追加
 - 段落内の `<b>` や `<kbd>` などの HTML タグは、エスケープせずに HTML として出力するようになりました。
   タグを文字として見せたいときは `` `<b>` `` のようにコードにするか `\<b>` と書きます
 

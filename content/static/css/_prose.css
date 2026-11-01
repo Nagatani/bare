@@ -1,0 +1,129 @@
+/* Extras in the article body that Markdown adds beyond plain elements. */
+@layer prose {
+  .prose {
+    & > :first-child {
+      margin-block-start: 0;
+    }
+
+    /* A rule under h2 makes long technical posts easier to scan. */
+    & h2 {
+      padding-block-end: var(--space-2);
+      border-block-end: 1px solid var(--color-rule);
+    }
+  }
+
+  /* `#` link shown when hovering a heading. */
+  .heading-anchor {
+    margin-inline-start: 0.4em;
+    color: var(--color-muted);
+    text-decoration: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+
+    &:visited {
+      color: var(--color-muted);
+    }
+
+    :is(h1, h2, h3, h4, h5, h6):hover > &,
+    &:focus-visible {
+      opacity: 1;
+    }
+  }
+
+  /* Wide tables scroll sideways instead of widening the page. */
+  .table-wrap {
+    overflow-x: auto;
+    margin-block: var(--space-5);
+  }
+
+  /* Table of contents ({{toc}}); hidden when the post is too short to have one. */
+  .toc-box {
+    margin-block-end: var(--space-6);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius);
+    font-size: var(--text-sm);
+
+    &:not(:has(.toc)) {
+      display: none;
+    }
+
+    & summary {
+      color: var(--color-muted);
+      font-weight: 600;
+    }
+
+    &[open] summary {
+      margin-block-end: var(--space-2);
+    }
+  }
+
+  /* No markers: headings often carry their own numbers ("1. Install"). */
+  .toc {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    & ol {
+      margin-block: 0.3em 0;
+      padding-inline-start: 1.25rem;
+      list-style: none;
+    }
+
+    & li + li {
+      margin-block-start: 0.3em;
+    }
+
+    & a {
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  /* Task list items: `- [x] done`. */
+  li.task {
+    list-style: none;
+    margin-inline-start: -1.25rem;
+
+    & input {
+      margin: 0 0.4em 0 0;
+      vertical-align: -0.1em;
+    }
+  }
+
+  /* Footnote references keep their underline: in running text, color alone
+     does not set links apart from the surrounding words. */
+  .footnote-ref {
+    /* Keep the line height even around the superscript. */
+    line-height: 0;
+
+    & a {
+      &::before {
+        content: "[";
+      }
+
+      &::after {
+        content: "]";
+      }
+    }
+  }
+
+  .footnotes {
+    margin-block-start: var(--space-6);
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-rule);
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+
+    & ol {
+      margin: 0;
+    }
+
+    & li:target {
+      color: var(--color-fg);
+    }
+  }
+}

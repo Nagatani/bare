@@ -8,6 +8,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::assets::Fingerprints;
+use crate::css;
 use crate::feed;
 use crate::images;
 use crate::parser::{self, escape_html};
@@ -442,7 +443,11 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     fs::create_dir_all(&posts_out).at(&posts_out)?;
 
     // Static files go in first, so a generated page wins over a same-named file.
-    let static_files = copy_dir(&config.content_dir.join("static"), &config.out_dir)?;
+    let static_files = copy_dir(
+        &config.content_dir.join("static"),
+        &config.out_dir,
+        &mut warnings,
+    )?;
 
     let mut nav: Vec<&Page> = pages.iter().filter(|page| page.nav.is_some()).collect();
     nav.sort_by(|a, b| a.nav.cmp(&b.nav).then_with(|| a.title.cmp(&b.title)));
@@ -742,8 +747,10 @@ fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
 }
 
 /// Recursively copies the contents of `from` into `to`, returning the number of
-/// files copied. A missing `from` directory copies nothing.
-fn copy_dir(from: &Path, to: &Path) -> Result<usize, BuildError> {
+/// files copied. A missing `from` directory copies nothing. Stylesheets are
+/// written with their `@import`s inlined, and CSS partials (`_*.css`) are
+/// skipped (see [`css`]).
+fn copy_dir(from: &Path, to: &Path, warnings: &mut Vec<String>) -> Result<usize, BuildError> {
     if !from.is_dir() {
         return Ok(0);
     }
@@ -754,7 +761,13 @@ fn copy_dir(from: &Path, to: &Path) -> Result<usize, BuildError> {
         let source = entry.path();
         let target = to.join(entry.file_name());
         if entry.file_type().at(&source)?.is_dir() {
-            count += copy_dir(&source, &target)?;
+            count += copy_dir(&source, &target, warnings)?;
+        } else if css::is_partial(&source) {
+            continue;
+        } else if source.extension().is_some_and(|ext| ext == "css") {
+            let bundled = css::bundle(&source, warnings).at(&source)?;
+            fs::write(&target, bundled).at(&target)?;
+            count += 1;
         } else {
             fs::copy(&source, &target).at(&source)?;
             count += 1;

@@ -88,11 +88,12 @@ description: 一覧や SNS に表示される短い説明
 独自ドメインを使う場合は、`content/static/CNAME` にドメイン名を書いておきます。
 
 デザインを変えたいときは `content/static/css/custom.css` に CSS を書きます。
-たとえば次のように書くと、アクセントカラーと本文の幅が変わります。
+たとえば次のように書くと、リンクの色と本文の幅が変わります。
+色・フォント・余白などの変数は `content/static/css/_tokens.css` に一覧があります。
 
 ```css
 :root {
-  --color-accent: light-dark(#2563eb, #60a5fa);
+  --color-link: light-dark(#2563eb, #60a5fa);
   --content-width: 48rem;
 }
 ```

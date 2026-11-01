@@ -2,6 +2,7 @@
 
 mod assets;
 mod check;
+mod css;
 mod feed;
 mod highlight;
 mod images;

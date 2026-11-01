@@ -1,0 +1,22 @@
+/* Removes browser defaults that get in the way. Zero specificity (:where). */
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  :where(body, h1, h2, h3, h4, h5, h6, p, figure, blockquote, pre, ul, ol, dl, dd) {
+    margin: 0;
+  }
+
+  :where(img, svg, video) {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  :where(html) {
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
+}

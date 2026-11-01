@@ -1,0 +1,89 @@
+/*
+ * Design tokens: every color, font and size the theme uses.
+ * Override any of them in custom.css, e.g. `:root { --color-link: ...; }`.
+ */
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+
+    /*
+     * Colors. Each value is light-dark(<light theme>, <dark theme>).
+     * Text colors keep a contrast ratio of at least 4.5:1 (WCAG AA) on both
+     * --color-bg and --color-surface.
+     */
+
+    /* Page */
+    --color-bg: light-dark(#fcfcfd, #131518);
+    --color-fg: light-dark(#1f2328, #e3e6ea);
+    --color-muted: light-dark(#59636e, #9ba4ae);
+    --color-rule: light-dark(#dfe3e8, #2d3239);
+    /* Background of code, table headers and other set-off areas. */
+    --color-surface: light-dark(#f3f5f7, #1d2025);
+
+    /* Links: the classic blue, purple once visited. */
+    --color-link: light-dark(#0645ad, #8ab4f8);
+    --color-link-visited: light-dark(#5b2d9e, #c3a6f5);
+    --color-link-hover: light-dark(#0b0080, #b5cefb);
+
+    /* Focus ring, text selection, checkboxes and hover borders. */
+    --color-accent: var(--color-link);
+    /* <mark> highlight. */
+    --color-mark: light-dark(#fff1a8, #5a4800);
+
+    /* Code */
+    --code-bg: var(--color-surface);
+    --code-border: var(--color-rule);
+
+    /* Syntax highlighting (build-time, see src/highlight.rs). */
+    --hl-keyword: light-dark(#8f2bb3, #d19bf2);
+    --hl-string: light-dark(#1a6b2f, #93d18a);
+    --hl-comment: light-dark(#5e6875, #8d97a3);
+    --hl-number: light-dark(#9a4100, #f0a46a);
+    --hl-type: light-dark(#06657a, #6fcfdf);
+    --hl-function: light-dark(#0b55b8, #82b1ff);
+    --hl-macro: light-dark(#9b3c00, #f59a7a);
+    --hl-key: light-dark(#7a4d00, #e6c27a);
+    --hl-tag: light-dark(#b0222c, #f2858b);
+    --hl-added: light-dark(#1a6b2f, #93d18a);
+    --hl-removed: light-dark(#b0222c, #f2858b);
+
+    /* Typography */
+    --font-sans: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono", monospace;
+    --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.0625rem);
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-lg: 1.15rem;
+    --text-h3: 1.1rem;
+    --text-h2: 1.35rem;
+    --text-h1: clamp(1.6rem, 1.3rem + 1.2vw, 1.9rem);
+    --text-code: 0.875rem;
+    --leading: 1.9;
+    --leading-tight: 1.4;
+    --leading-code: 1.7;
+
+    /* Spacing scale */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1.25rem;
+    --space-5: 2rem;
+    --space-6: 3rem;
+    --space-7: 4rem;
+    --space-8: 5rem;
+    /* Vertical rhythm between paragraphs and lists. */
+    --flow: 1.6em;
+
+    /* Layout */
+    /* Wide enough for ~50 full-width characters or ~100 columns of code per line. */
+    --content-width: 56rem;
+    --gutter: clamp(1rem, 4vw, 1.5rem);
+    --header-height: 6.5rem;
+    --radius: 8px;
+    --radius-sm: 4px;
+
+    @media (width <= 480px) {
+      --header-height: 5rem;
+    }
+  }
+}
