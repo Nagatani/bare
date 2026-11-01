@@ -978,7 +978,7 @@ fn render_archive(posts: &[Post], link_tags: bool) -> String {
 /// Renders `<li>` items for the tag index, most used tags first.
 fn render_tag_list(groups: &[TagGroup], root: &str) -> String {
     let mut sorted: Vec<&TagGroup> = groups.iter().collect();
-    sorted.sort_by(|a, b| b.posts.len().cmp(&a.posts.len()));
+    sorted.sort_by_key(|group| std::cmp::Reverse(group.posts.len()));
     let mut out = String::new();
     for group in sorted {
         out.push_str(&format!(
