@@ -57,9 +57,7 @@
   }
 
   .post-header {
-    margin-block-end: 3.5rem;
-    padding-block-end: 2.5rem;
-    border-block-end: 1px solid var(--color-rule);
+    margin-block-end: var(--space-7);
   }
 
   .lead {
@@ -170,12 +168,7 @@
     display: grid;
     grid-template-columns: 7.5rem 1fr;
     gap: var(--space-3) var(--space-4);
-    padding-block: var(--space-5);
-    border-block-end: 1px solid var(--color-rule);
-
-    &:first-child {
-      border-block-start: 1px solid var(--color-rule);
-    }
+    padding-block: var(--space-4);
 
     & time {
       padding-block-start: 0.15rem;
@@ -281,7 +274,5 @@
   /* "← back to posts" link at the end of a page. */
   .back {
     margin-block-start: var(--space-8);
-    padding-block-start: var(--space-5);
-    border-block-start: 1px solid var(--color-rule);
   }
 }

@@ -4,12 +4,6 @@
     & > :first-child {
       margin-block-start: 0;
     }
-
-    /* A rule under h2 makes long technical posts easier to scan. */
-    & h2 {
-      padding-block-end: var(--space-2);
-      border-block-end: 1px solid var(--color-rule);
-    }
   }
 
   /* `#` link shown when hovering a heading. */
@@ -112,9 +106,7 @@
   }
 
   .footnotes {
-    margin-block-start: var(--space-6);
-    padding-block-start: var(--space-4);
-    border-block-start: 1px solid var(--color-rule);
+    margin-block-start: var(--space-7);
     color: var(--color-muted);
     font-size: var(--text-sm);
 

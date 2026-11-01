@@ -6,14 +6,28 @@
     padding-inline: var(--gutter);
   }
 
+  /* No border: the translucent header fades into the page below it, so text
+     scrolling underneath dissolves instead of being cut by a line. */
   .site-header {
     position: sticky;
     inset-block-start: 0;
     z-index: 10;
-    border-block-end: 1px solid var(--color-rule);
     background: color-mix(in srgb, var(--color-bg) 88%, transparent);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
+
+    &::after {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      inset-block-start: 100%;
+      block-size: var(--space-5);
+      background: linear-gradient(
+        color-mix(in srgb, var(--color-bg) 88%, transparent),
+        transparent
+      );
+      pointer-events: none;
+    }
 
     & .wrap {
       display: flex;
@@ -33,8 +47,9 @@
     }
   }
 
+  /* No border: the page shades gently into the footer. */
   .site-footer {
-    border-block-start: 1px solid var(--color-rule);
+    background: linear-gradient(transparent, var(--color-surface));
     color: var(--color-muted);
     font-size: 0.8rem;
 
@@ -43,7 +58,7 @@
       flex-wrap: wrap;
       justify-content: space-between;
       gap: var(--space-2) var(--space-4);
-      padding-block: 2.5rem;
+      padding-block: var(--space-6) var(--space-5);
     }
   }
 
