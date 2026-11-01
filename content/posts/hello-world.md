@@ -32,6 +32,7 @@ Markdown を書いて `cargo run` するだけで、`dist/` に HTML が出力�
 | 脚注 | `本文[^1]` と `[^1]: 注釈` | 下を参照[^footnote] |
 | 引用 | `> text` | 下を参照 |
 | 表 | `\| a \| b \|` | この表 |
+| HTML | `<kbd>Ctrl</kbd>` / `<ruby>漢字<rt>かんじ</rt></ruby>` | <kbd>Ctrl</kbd> / <ruby>漢字<rt>かんじ</rt></ruby> |
 
 リストは 2 文字以上字下げすると入れ子になり、項目の中にコードブロックも書けます。
 
@@ -47,6 +48,14 @@ Markdown を書いて `cargo run` するだけで、`dist/` に HTML が出力�
      ```
 
 [^footnote]: 脚注は番号が自動で振られ、記事の末尾にまとめて表示されます。
+
+Markdown で書けないものは HTML で書けます。行頭から `<details>` や `<div>` などで始めたブロックは、
+空行までそのまま出力されます（中の Markdown は変換されません）。
+
+<details>
+<summary>クリックで開く</summary>
+<p>HTML のブロックは Markdown を通さず、そのまま出力されます。</p>
+</details>
 
 > 画像のパスは `/images/...` のようにサイトのルートから書けます。
 > GitHub Pages のサブパス（`/bare/` など）で公開しても、自動で正しい相対パスに変換されます。

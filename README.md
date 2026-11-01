@@ -107,7 +107,7 @@ cargo test
 - プレビュー用の出力は `target/bare-serve/` に書くので、`dist/` には影響しません。
 
 ### ビルドの細かい挙動
-- 通常のビルドでは `dist/posts/` と `dist/tags/` だけを作り直し、`dist/` 直下の他のファイルは残します。
+- 通常のビルドでは `dist/posts/`・`dist/tags/`・`dist/page/` だけを作り直し、`dist/` 直下の他のファイルは残します。
 - `--clean` では作業ディレクトリや `content/` を含むディレクトリ（`--out .` など）の削除を拒否します。
 - `content/static/` の中身（画像・CSS・favicon・`CNAME` など）は、構造を保ったまま `dist/` にコピーされます。
 - ページから読み込む CSS / JS には `?v=<内容のハッシュ>` を自動で付けます。CSS を変えたときだけブラウザが取り直すので、古いデザインが残りません。
@@ -131,7 +131,7 @@ PR とブランチでは `.github/workflows/ci.yml` がフォーマット・clip
 
 | ファイル | 内容 |
 | --- | --- |
-| `index.html` | 記事一覧（新着順） |
+| `index.html` / `page/<番号>.html` | 記事一覧（新着順）。`site.conf` の `per_page` 件ごとにページを分ける |
 | `posts/<ファイル名>.html` | 各記事 |
 | `<ファイル名>.html` | 固定ページ（`content/pages/`） |
 | `tags/<タグ>.html` / `tags/index.html` | タグ別の記事一覧 / タグ一覧（`templates/tag.html` / `tags.html` がある場合） |
@@ -196,7 +196,18 @@ frontmatter に `nav: 1` のように番号を書くと、ヘッダーのナビ�
 - `/images/a.png` のように `/` で始まる URL は、ページからの相対パスに変換されます。
   GitHub Pages のサブパス（`https://<user>.github.io/<repo>/`）で公開しても画像やリンクが切れません。
 - 見出しの `id` は見出しの文字から作られます（例: `posts/hello-world.html#できること`）。重複すると `-1`, `-2` が付きます。
-- 未対応: 生の HTML（エスケープされて表示されます）。
+- Markdown で書けないものは HTML で書けます（次の節）。
+
+### HTML
+
+- 行頭から `<div>`・`<details>`・`<figure>`・`<table>`・`<iframe>`・`<video>`・`<!-- -->` などで始めたブロックは、
+  空行までそのまま出力されます（中の Markdown は変換されません）。`<pre>`・`<script>`・`<style>`・コメントは、
+  閉じタグまで空行を含めて出力します。
+- 段落の中では `<kbd>`・`<ruby>`／`<rt>`・`<sub>`・`<sup>`・`<mark>`・`<span>`・`<br>`・`<img>` などのタグがそのまま使えます。
+- HTML として扱うのは実在する HTML 要素名のタグだけです。`Vec<u8>` や `Option<T>` のような文字列は、これまでどおりそのまま表示されます。
+  タグを文字として見せたいときは `` `<div>` `` のようにコードにするか、`\<b>` とエスケープします。
+- `src="/images/a.png"` のように `/` で始まる `src`・`href`・`poster` は、Markdown のリンクと同じく相対パスに変換されます。
+- `<https://example.com>` は自動でリンクになります。
 
 ### シンタックスハイライト
 
@@ -238,6 +249,7 @@ CSS は `content/static/css/` にあり、`dist/css/` にコピーされます�
 | `lang` | `{{site_lang}}` | `ja` |
 | `base_url` | `{{site_url}}` | （空。CI では自動） |
 | `image` | — | （空）。OGP の既定画像 |
+| `per_page` | — | （空）。記事一覧の 1 ページあたりの件数。空ならすべてを 1 ページに表示 |
 
 すべてのテンプレートで `{{root}}`（ページからサイトのルートへの相対パス）が使えます。
 テンプレートごとに使えるトークンは次のとおりです。
@@ -248,7 +260,7 @@ CSS は `content/static/css/` にあり、`dist/css/` にコピーされます�
 | `post.html` | `{{title}}`, `{{date}}`, `{{description}}`, `{{tags}}`, `{{toc}}`（目次。短い記事では空）, `{{reading_minutes}}`, `{{content}}` |
 | `page.html`（任意） | `{{title}}`, `{{description}}`, `{{toc}}`, `{{content}}` |
 | `archive.html`（任意） | `{{archive}}`（年ごとの記事一覧）, `{{post_count}}` |
-| `index.html` | `{{post_list}}`, `{{post_count}}` |
+| `index.html` | `{{post_list}}`, `{{post_count}}`（全記事数）, `{{pagination}}`（ページ送り。1 ページなら空）, `{{page_number}}`, `{{page_count}}` |
 | `tag.html`（任意） | `{{tag}}`, `{{post_list}}`, `{{post_count}}` |
 | `tags.html`（任意） | `{{tag_list}}`, `{{tag_count}}` |
 | `404.html`（任意） | `{{root}}` は `/bare/` のようなルートからの絶対パスになります |

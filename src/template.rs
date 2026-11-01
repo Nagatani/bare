@@ -46,6 +46,11 @@ impl Template {
         fs::read_to_string(path).map(Self::new)
     }
 
+    /// True if the template contains the placeholder `{{name}}`.
+    pub fn uses(&self, name: &str) -> bool {
+        self.source.contains(&format!("{{{{{name}}}}}"))
+    }
+
     /// Names of placeholders in the template that `context` does not provide.
     pub fn unknown_tokens(&self, context: &Context) -> Vec<String> {
         let mut unknown = Vec::new();

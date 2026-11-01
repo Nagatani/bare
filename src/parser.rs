@@ -3,8 +3,12 @@
 //! Everything here is plain string slicing over lines — no regex, no external
 //! Markdown crate. Supported blocks: headings, paragraphs, fenced code blocks,
 //! ordered/unordered (nested, task) lists, blockquotes, tables, thematic breaks
-//! and footnotes. Supported inlines: code, links, images, `**strong**`, `*em*`,
-//! `~~del~~`, footnote references `[^1]` and `\` escapes.
+//! footnotes and raw HTML blocks. Supported inlines: code, links, images,
+//! `**strong**`, `*em*`, `~~del~~`, footnote references `[^1]`, autolinks
+//! `<https://…>`, inline HTML tags and `\` escapes.
+//!
+//! Raw HTML is recognised only for real HTML element names, so prose such as
+//! `Vec<u8>` or `Option<T>` is still escaped and shown as written.
 
 use std::collections::HashMap;
 
@@ -187,6 +191,36 @@ fn render_blocks(markdown: &str, state: &mut State) -> String {
             // An unterminated fence renders everything after it as code.
             blocks.code_block(fence.lang, &lines[start..end]);
             i = end + 1;
+            continue;
+        }
+
+        if let Some(end) = html_block_start(trimmed) {
+            blocks.flush();
+            let mut stop = i;
+            loop {
+                let line = lines[stop].trim();
+                let done = match end {
+                    HtmlEnd::BlankLine => stop > i && line.is_empty(),
+                    HtmlEnd::Text(close) => line.to_ascii_lowercase().contains(close),
+                };
+                if done {
+                    // A blank line ends the block but is not part of it.
+                    if end != HtmlEnd::BlankLine {
+                        stop += 1;
+                    }
+                    break;
+                }
+                stop += 1;
+                if stop == lines.len() {
+                    break;
+                }
+            }
+            let html = lines[i..stop].join("\n");
+            blocks
+                .out
+                .push_str(&rewrite_root_urls(&html, blocks.state.root));
+            blocks.out.push('\n');
+            i = stop;
             continue;
         }
 
@@ -887,6 +921,19 @@ fn render_inline(text: &str, root: &str) -> String {
                 }
                 continue;
             }
+            '<' => {
+                if let Some(url) = autolink(rest) {
+                    let url_html = escape_html(url);
+                    out.push_str(&format!("<a href=\"{url_html}\">{url_html}</a>"));
+                    rest = &rest[url.len() + 2..];
+                    continue;
+                }
+                if let Some(tag) = html_tag(rest).filter(is_inline) {
+                    out.push_str(&rewrite_root_urls(&rest[..tag.len], root));
+                    rest = &rest[tag.len..];
+                    continue;
+                }
+            }
             '!' => {
                 if let Some(link) = rest[1..]
                     .starts_with('[')
@@ -947,6 +994,200 @@ fn render_inline(text: &str, root: &str) -> String {
         push_escaped(&mut out, c);
         rest = &rest[c.len_utf8()..];
     }
+    out
+}
+
+/// Elements that start an HTML block when a line begins with one of their tags.
+const BLOCK_ELEMENTS: &[&str] = &[
+    "address",
+    "article",
+    "aside",
+    "audio",
+    "blockquote",
+    "canvas",
+    "center",
+    "dd",
+    "details",
+    "dialog",
+    "div",
+    "dl",
+    "dt",
+    "embed",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "iframe",
+    "li",
+    "main",
+    "nav",
+    "noscript",
+    "object",
+    "ol",
+    "p",
+    "picture",
+    "pre",
+    "script",
+    "section",
+    "source",
+    "style",
+    "summary",
+    "svg",
+    "table",
+    "tbody",
+    "td",
+    "template",
+    "textarea",
+    "tfoot",
+    "th",
+    "thead",
+    "tr",
+    "ul",
+    "video",
+];
+
+/// Elements kept as HTML inside a paragraph.
+const INLINE_ELEMENTS: &[&str] = &[
+    "a", "abbr", "audio", "b", "bdi", "bdo", "br", "cite", "code", "data", "del", "dfn", "em", "i",
+    "iframe", "img", "ins", "kbd", "mark", "picture", "q", "rp", "rt", "ruby", "s", "samp",
+    "small", "source", "span", "strong", "sub", "sup", "svg", "time", "u", "var", "video", "wbr",
+];
+
+/// Where an HTML block ends.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum HtmlEnd {
+    /// At the next blank line (most elements).
+    BlankLine,
+    /// After the line containing this text, e.g. `</pre>` or `-->`, so the
+    /// content may contain blank lines.
+    Text(&'static str),
+}
+
+/// Recognises the first line of an HTML block: a comment, or a tag of one of
+/// [`BLOCK_ELEMENTS`] at the start of the line.
+fn html_block_start(line: &str) -> Option<HtmlEnd> {
+    let tag = html_tag(line)?;
+    let Some(name) = tag.name else {
+        return Some(HtmlEnd::Text("-->"));
+    };
+    let name = name.to_ascii_lowercase();
+    if !BLOCK_ELEMENTS.contains(&name.as_str()) {
+        return None;
+    }
+    // A closing tag on the same line (e.g. `<pre>x</pre>`) needs no search.
+    let raw_text = ["pre", "script", "style", "textarea"]
+        .into_iter()
+        .find(|raw| *raw == name && !line.to_ascii_lowercase().contains(&format!("</{raw}>")));
+    Some(match raw_text {
+        Some("pre") => HtmlEnd::Text("</pre>"),
+        Some("script") => HtmlEnd::Text("</script>"),
+        Some("style") => HtmlEnd::Text("</style>"),
+        Some("textarea") => HtmlEnd::Text("</textarea>"),
+        _ => HtmlEnd::BlankLine,
+    })
+}
+
+/// An HTML tag or comment at the start of some text.
+struct HtmlTag<'a> {
+    /// Element name; `None` for a comment.
+    name: Option<&'a str>,
+    /// Length in bytes, including the closing `>`.
+    len: usize,
+}
+
+/// Comments and [`INLINE_ELEMENTS`] may appear inside a paragraph.
+fn is_inline(tag: &HtmlTag) -> bool {
+    match tag.name {
+        None => true,
+        Some(name) => INLINE_ELEMENTS.contains(&name.to_ascii_lowercase().as_str()),
+    }
+}
+
+/// Parses `<name attr="v">`, `</name>`, `<name/>` or `<!-- … -->` at the start of `s`.
+fn html_tag(s: &str) -> Option<HtmlTag<'_>> {
+    if let Some(rest) = s.strip_prefix("<!--") {
+        let end = rest.find("-->").map_or(s.len(), |i| 4 + i + 3);
+        return Some(HtmlTag {
+            name: None,
+            len: end,
+        });
+    }
+    let rest = s.strip_prefix('<')?;
+    let rest = rest.strip_prefix('/').unwrap_or(rest);
+    let offset = s.len() - rest.len();
+    let name_len = rest
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric())
+        .count();
+    if name_len == 0 || !rest.as_bytes()[0].is_ascii_alphabetic() {
+        return None;
+    }
+    let name = &rest[..name_len];
+    let attrs = &rest[name_len..];
+    if !attrs.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/') {
+        return None;
+    }
+    // Find the closing `>` outside quoted attribute values.
+    let mut quote = None;
+    for (i, c) in attrs.char_indices() {
+        match (quote, c) {
+            (Some(q), _) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '<') => return None,
+            (None, '>') => {
+                return Some(HtmlTag {
+                    name: Some(name),
+                    len: offset + name_len + i + 1,
+                })
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// URL of an autolink `<https://example.com>` at the start of `s`.
+fn autolink(s: &str) -> Option<&str> {
+    let rest = s.strip_prefix('<')?;
+    let url = &rest[..rest.find('>')?];
+    let valid = (url.starts_with("https://") || url.starts_with("http://"))
+        && !url.contains(|c: char| c.is_whitespace() || c == '<');
+    valid.then_some(url)
+}
+
+/// Rewrites site-absolute `src`, `href` and `poster` URLs in raw HTML against
+/// `root`, as [`resolve_url`] does for Markdown links.
+fn rewrite_root_urls(html: &str, root: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        let next = ["src=\"/", "href=\"/", "poster=\"/"]
+            .into_iter()
+            .filter_map(|attr| rest.find(attr).map(|i| (i, attr.len() - 1)))
+            .filter(|&(i, _)| i == 0 || rest.as_bytes()[i - 1].is_ascii_whitespace())
+            .min();
+        let Some((at, len)) = next else {
+            break;
+        };
+        // `at + len` is the leading `/` of the URL.
+        out.push_str(&rest[..at + len]);
+        rest = &rest[at + len..];
+        if !rest.starts_with("//") {
+            out.push_str(root);
+            rest = &rest[1..];
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -1188,8 +1429,8 @@ mod tests {
     #[test]
     fn renders_inline() {
         assert_eq!(
-            render_inline("see [the `std` docs](https://doc.rust-lang.org/std/) & <b>", "../"),
-            "see <a href=\"https://doc.rust-lang.org/std/\">the <code>std</code> docs</a> &amp; &lt;b&gt;"
+            render_inline("see [the `std` docs](https://doc.rust-lang.org/std/) & <T>", "../"),
+            "see <a href=\"https://doc.rust-lang.org/std/\">the <code>std</code> docs</a> &amp; &lt;T&gt;"
         );
         assert_eq!(
             render_inline("[not a link] `open", "../"),
@@ -1273,5 +1514,51 @@ mod tests {
              <li><a href=\"#two-code\">Two <code>code</code></a></li>\n</ol>"
         );
         assert_eq!(render_toc(&render_markdown("## Only", "").headings), "");
+    }
+
+    #[test]
+    fn keeps_inline_html_for_known_elements() {
+        assert_eq!(
+            render_inline("<kbd>Ctrl</kbd>+<kbd>C</kbd>, <ruby>漢字<rt>かんじ</rt></ruby>, H<sub>2</sub>O<br>", ""),
+            "<kbd>Ctrl</kbd>+<kbd>C</kbd>, <ruby>漢字<rt>かんじ</rt></ruby>, H<sub>2</sub>O<br>"
+        );
+        // Not HTML elements, or not tags at all: escaped as before.
+        assert_eq!(
+            render_inline("Vec<u8>, Option<String>, a < b > c, <div>, \\<b>", ""),
+            "Vec&lt;u8&gt;, Option&lt;String&gt;, a &lt; b &gt; c, &lt;div&gt;, &lt;b&gt;"
+        );
+        assert_eq!(
+            render_inline(
+                "<span title=\"a > b\">x</span> <img src=\"/images/a.png\" alt=\"\">",
+                "../"
+            ),
+            "<span title=\"a > b\">x</span> <img src=\"../images/a.png\" alt=\"\">"
+        );
+        assert_eq!(
+            render_inline("<https://example.com/a?b=1&c> <!-- note -->", ""),
+            "<a href=\"https://example.com/a?b=1&amp;c\">https://example.com/a?b=1&amp;c</a> <!-- note -->"
+        );
+    }
+
+    #[test]
+    fn passes_html_blocks_through() {
+        let src = "<div class=\"note\">\n**not** markdown\n</div>\n\nafter *this*";
+        assert_eq!(
+            md(src),
+            "<div class=\"note\">\n**not** markdown\n</div>\n<p>after <em>this</em></p>\n"
+        );
+        // pre and comments may contain blank lines.
+        let src = "<pre>\na\n\nb\n</pre>\n<!--\n\nhidden\n-->\ntext";
+        assert_eq!(
+            md(src),
+            "<pre>\na\n\nb\n</pre>\n<!--\n\nhidden\n-->\n<p>text</p>\n"
+        );
+        // Root-relative URLs are rewritten; protocol-relative ones are not.
+        assert_eq!(
+            md("<video src=\"/v.mp4\" poster=\"/p.png\"></video>\n<iframe src=\"//x.test/e\"></iframe>"),
+            "<video src=\"../v.mp4\" poster=\"../p.png\"></video>\n<iframe src=\"//x.test/e\"></iframe>\n"
+        );
+        // An inline element at the start of a line is still a paragraph.
+        assert_eq!(md("<kbd>A</kbd> key"), "<p><kbd>A</kbd> key</p>\n");
     }
 }

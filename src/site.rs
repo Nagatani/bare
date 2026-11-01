@@ -90,6 +90,8 @@ pub(crate) struct SiteMeta {
     pub image: Option<String>,
     /// Absolute public URL, always ending in `/`.
     pub base_url: Option<String>,
+    /// Posts per page of the post list; `None` puts all posts on one page.
+    per_page: Option<usize>,
 }
 
 impl SiteMeta {
@@ -123,6 +125,10 @@ impl SiteMeta {
             lang: value("lang", "ja"),
             image: non_empty("image"),
             base_url,
+            per_page: conf
+                .get("per_page")
+                .and_then(|v| v.trim().parse().ok())
+                .filter(|&n| n > 0),
         })
     }
 
@@ -426,7 +432,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
 
     // Without `clean`, only generated directories are cleared, so stale pages from
     // deleted posts or tags disappear without touching anything else.
-    for dir in ["posts", "tags"] {
+    for dir in ["posts", "tags", "page"] {
         let dir = config.out_dir.join(dir);
         if dir.exists() {
             fs::remove_dir_all(&dir).at(&dir)?;
@@ -537,22 +543,64 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         sitemap.push((path, None));
     }
 
+    // The post list: index.html, then page/2.html, page/3.html, ... with `per_page`.
     let all: Vec<&Post> = posts.iter().collect();
-    let context = r
-        .context("")
-        .with("post_list", render_post_list(&all, "", link_tags))
-        .with("post_count", posts.len().to_string());
-    let body = r.render("index.html", &templates.index, &context);
-    let meta = PageMeta {
-        title: &site.title,
-        description: None,
-        path: Some(""),
-        image: None,
-        published: None,
-        root: "",
+    let chunks: Vec<&[&Post]> = match site.per_page {
+        Some(n) if !all.is_empty() => all.chunks(n).collect(),
+        _ => vec![&all[..]],
     };
-    let html = r.layout(&templates.layout, &site.title, &meta, Some(""), body);
-    write(config.out_dir.join("index.html"), html)?;
+    let page_count = chunks.len();
+    if page_count > 1 && !templates.index.uses("pagination") {
+        warnings.push(
+            "per_page is set but templates/index.html has no {{pagination}}: \
+             posts after the first page are only reachable from tags and archive.html"
+                .to_string(),
+        );
+    }
+    if page_count > 1 {
+        let dir = config.out_dir.join("page");
+        fs::create_dir_all(&dir).at(&dir)?;
+    }
+    for (index, chunk) in chunks.iter().enumerate() {
+        let number = index + 1;
+        let (root, path) = match number {
+            1 => ("", String::new()),
+            n => ("../", format!("page/{n}.html")),
+        };
+        let context = r
+            .context(root)
+            .with("post_list", render_post_list(chunk, root, link_tags))
+            .with("post_count", posts.len().to_string())
+            .with("pagination", render_pagination(number, page_count, root))
+            .with("page_number", number.to_string())
+            .with("page_count", page_count.to_string());
+        let body = r.render("index.html", &templates.index, &context);
+        let title = match number {
+            1 => site.title.clone(),
+            n => format!("{} ({n}/{page_count})", site.title),
+        };
+        let meta = PageMeta {
+            title: &title,
+            description: None,
+            path: Some(&path),
+            image: None,
+            published: None,
+            root,
+        };
+        let current = (number == 1).then_some("");
+        let html = r.layout(&templates.layout, &title, &meta, current, body);
+        write(
+            config.out_dir.join(if number == 1 {
+                "index.html".to_string()
+            } else {
+                path.clone()
+            }),
+            html,
+        )?;
+        if number > 1 {
+            sitemap.push((path, chunk.first().map(|p| p.date.clone())));
+        }
+    }
 
     if let Some(archive) = &templates.archive {
         let context = r
@@ -950,6 +998,48 @@ fn render_post_list(posts: &[&Post], root: &str, link_tags: bool) -> String {
     out
 }
 
+/// Renders `{{pagination}}`: previous/next links and page numbers, with
+/// ellipses for long ranges. Empty when everything fits on one page.
+fn render_pagination(current: usize, count: usize, root: &str) -> String {
+    if count <= 1 {
+        return String::new();
+    }
+    let href = |n: usize| match n {
+        1 => format!("{root}index.html"),
+        n => format!("{root}page/{n}.html"),
+    };
+    let mut items = Vec::new();
+    if current > 1 {
+        items.push(format!(
+            "<li><a rel=\"prev\" href=\"{}\">←</a></li>",
+            href(current - 1)
+        ));
+    }
+    let mut last_shown = 0;
+    for n in 1..=count {
+        // First, last, and the pages next to the current one.
+        if n != 1 && n != count && n.abs_diff(current) > 1 {
+            continue;
+        }
+        if n > last_shown + 1 {
+            items.push("<li class=\"gap\">…</li>".to_string());
+        }
+        items.push(if n == current {
+            format!("<li><span aria-current=\"page\">{n}</span></li>")
+        } else {
+            format!("<li><a href=\"{}\">{n}</a></li>", href(n))
+        });
+        last_shown = n;
+    }
+    if current < count {
+        items.push(format!(
+            "<li><a rel=\"next\" href=\"{}\">→</a></li>",
+            href(current + 1)
+        ));
+    }
+    format!("<ol class=\"pagination\">{}</ol>", items.join(""))
+}
+
 /// Renders posts grouped by year, newest first, for `{{archive}}`.
 fn render_archive(posts: &[Post], link_tags: bool) -> String {
     let mut out = String::new();
@@ -1003,6 +1093,7 @@ mod tests {
             lang: "ja".into(),
             image: None,
             base_url: base_url.map(str::to_string),
+            per_page: None,
         }
     }
 
@@ -1064,5 +1155,24 @@ mod tests {
         ));
         assert!(with.contains("href=\"../feed.xml\""));
         assert!(with.contains("article:published_time"));
+    }
+
+    #[test]
+    fn renders_pagination() {
+        assert_eq!(render_pagination(1, 1, ""), "");
+        assert_eq!(
+            render_pagination(1, 2, ""),
+            "<ol class=\"pagination\"><li><span aria-current=\"page\">1</span></li>\
+             <li><a href=\"page/2.html\">2</a></li>\
+             <li><a rel=\"next\" href=\"page/2.html\">→</a></li></ol>"
+        );
+        let middle = render_pagination(5, 9, "../");
+        assert!(middle.starts_with("<ol class=\"pagination\"><li><a rel=\"prev\" href=\"../page/4.html\">←</a></li>\
+             <li><a href=\"../index.html\">1</a></li><li class=\"gap\">…</li>\
+             <li><a href=\"../page/4.html\">4</a></li><li><span aria-current=\"page\">5</span></li>"));
+        assert!(middle.ends_with(
+            "<li class=\"gap\">…</li><li><a href=\"../page/9.html\">9</a></li>\
+             <li><a rel=\"next\" href=\"../page/6.html\">→</a></li></ol>"
+        ));
     }
 }

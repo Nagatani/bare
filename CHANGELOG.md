@@ -8,6 +8,10 @@
 ## Unreleased
 
 ### 追加
+- 記事一覧のページ分割: `site.conf` の `per_page` 件ごとに `index.html`, `page/2.html`, ... に分け、`{{pagination}}` でページ送りを表示
+  （`per_page` が空なら従来どおり 1 ページ。`{{pagination}}` のない `index.html` で `per_page` を設定するとビルド時に警告）
+- HTML の入力: 行頭の `<div>`・`<details>`・`<iframe>` などのブロックと、段落内の `<kbd>`・`<ruby>` などのタグをそのまま出力。
+  `<https://…>` の自動リンク。実在する HTML 要素名だけを対象にするので、`Vec<u8>` などは従来どおり文字として表示
 - `bare new <名前>`: 今日の日付と `draft: true` 入りの記事ファイルを作成（`--page` で固定ページ）
 - 目次 `{{toc}}`（見出しが 2 つ以上ある記事・固定ページ）と読了時間 `{{reading_minutes}}`
 - `description` を省略したとき、本文の最初の段落から抜粋を作って一覧・OGP・フィードに使用
@@ -36,7 +40,13 @@
 - 記事の `date` が `YYYY-MM-DD` でないときに警告を表示
 - 日本語やスペースを含むファイル名のリンクを URL エンコード
 
+### 変更
+- 段落内の `<b>` や `<kbd>` などの HTML タグは、エスケープせずに HTML として出力するようになりました。
+  タグを文字として見せたいときは `` `<b>` `` のようにコードにするか `\<b>` と書きます
+
 ### テンプレートの変更
+- `index.html`: 記事一覧の後にページ送り `<nav class="pager" aria-label="ページ送り">{{pagination}}</nav>` を追加
+  （`site.conf` に `per_page` を書く場合は必須）
 - `post.html`: メタ情報に `<span>約 {{reading_minutes}} 分で読めます</span>`、ヘッダーの後に
   `<details class="toc-box" open><summary>目次</summary>{{toc}}</details>` を追加
 - `archive.html`: 新規（任意）
