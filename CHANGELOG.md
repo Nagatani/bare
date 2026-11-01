@@ -8,6 +8,13 @@
 ## Unreleased
 
 ### 追加
+- `bare serve`: 保存すると再ビルドして自動リロードするプレビューサーバー（GitHub Pages と同じサブパス・404 の挙動）
+- `bare check`: 生成した HTML の内部リンク・`#アンカー`・画像のリンク切れを検査（CI はこれに通ったときだけデプロイ）
+- ビルド時のシンタックスハイライト（Rust・TOML・YAML・JSON・シェル・JS/TS・Python・Go・C 系・CSS・SQL・HTML・diff）
+- タグ別ページ `tags/<タグ>.html` とタグ一覧 `tags/index.html`。記事のタグがリンクになる
+- 固定ページ `content/pages/*.md` と、ヘッダーのナビゲーション（frontmatter の `nav`）
+- Markdown の画像に `width` / `height` を自動付与（PNG・GIF・JPEG・WebP・SVG）
+- テンプレートに未定義のプレースホルダーがあると警告
 - CSS を `content/static/css/style.css` に分離し、`@layer`・`light-dark()`・CSS ネスト・コンテナクエリで再構成
 - 自分用の上書きスタイル `content/static/css/custom.css`（本家では変更しません）
 - 見出しに `id` と `#` リンクを付与（ページ内リンク用）
@@ -23,7 +30,10 @@
 - 日本語やスペースを含むファイル名のリンクを URL エンコード
 
 ### テンプレートの変更
+- `tag.html` / `tags.html` / `page.html`: 新規（任意。置くとタグ別ページ・タグ一覧・固定ページ専用の表示になる）
+- `index.html`: タグ一覧へのリンク `<a href="{{root}}tags/">タグ一覧</a>` を追加
 - `layout.html`
+  - ヘッダーを `<p class="brand-group">`（サイト名 + キャッチコピー）と `{{nav}}` に変更
   - `<style>...</style>` を削除し、`<link rel="stylesheet" href="{{root}}css/style.css">` と
     `<link rel="stylesheet" href="{{root}}css/custom.css">` に置き換え（自分の CSS は custom.css へ移す）
   - `<body>` 直後に `<a class="skip-link" href="#main">本文へ移動</a>` を追加
@@ -37,6 +47,7 @@
 
 ### ワークフロー
 - `configure-pages` をビルドの前に移動し、その出力 `base_url` を `--base-url` で渡すように変更
+- `pages.yml` / `ci.yml` のビルドを `bare check` に変更（リンク切れがあると失敗する）
 
 ## 2026-11-01
 

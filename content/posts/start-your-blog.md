@@ -93,10 +93,14 @@ description: 一覧や SNS に表示される短い説明
 `custom.css` は本家では変更されないので、本家の更新を取り込んでも衝突しません。
 HTML の構造を変えたいときは `content/templates/` を編集します。
 
+プロフィールなどの固定ページは `content/pages/` に置きます（[About](../about.html) がその例です）。
+frontmatter に `nav: 1` と書くと、ヘッダーのナビゲーションに表示されます。
+
 公開したサイトには、次のファイルも自動で生成されます。
 
 | ファイル | 用途 |
 | --- | --- |
+| `tags/` | タグ別の記事一覧。記事のタグをクリックすると開きます |
 | `feed.xml` | Atom フィード。RSS リーダーで購読できます |
 | `sitemap.xml` | 検索エンジン向けのページ一覧 |
 | `404.html` | 存在しない URL を開いたときのページ（`content/templates/404.html`） |
@@ -108,11 +112,15 @@ HTML の構造を変えたいときは `content/templates/` を編集します�
 ```sh
 git clone https://github.com/<ユーザー名>/bare.git
 cd bare
-cargo run -- --clean
-open dist/index.html
+cargo run -- serve
 ```
 
-`dist/` は生成物なので Git には含めません。公開時は Actions が改めてビルドします。
+表示された URL（`http://127.0.0.1:3000/bare/` など）をブラウザで開きます。
+記事を保存すると自動で再ビルドされ、ブラウザも自動でリロードされます。下書きもここでは表示されます。
+
+公開前にリンク切れがないかは `cargo run -- check` で確認できます。
+GitHub Actions も同じ検査をしていて、記事どうしのリンクや `#見出し` へのリンク、画像が切れていると公開を止めます。
+どのファイルのどのリンクが切れているかは、Actions のログに表示されます。
 
 ## 7. 本家の更新を取り込む
 

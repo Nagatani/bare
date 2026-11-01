@@ -84,26 +84,15 @@ pub(crate) fn atom(site: &SiteMeta, posts: &[Post]) -> String {
     out
 }
 
-/// Renders `sitemap.xml` listing the home page and every post.
-pub(crate) fn sitemap(site: &SiteMeta, posts: &[Post]) -> String {
+/// Renders `sitemap.xml` from `(path, lastmod)` entries relative to the site root.
+pub(crate) fn sitemap(site: &SiteMeta, entries: &[(String, Option<String>)]) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
-
-    let newest = posts
-        .iter()
-        .map(|post| post.date.as_str())
-        .find(|d| is_iso_date(d));
-    push_url(&mut out, &site.url("").unwrap_or_default(), newest);
-    for post in posts {
-        let lastmod = Some(post.date.as_str()).filter(|d| is_iso_date(d));
-        push_url(
-            &mut out,
-            &site.url(&post.path()).unwrap_or_default(),
-            lastmod,
-        );
+    for (path, lastmod) in entries {
+        let lastmod = lastmod.as_deref().filter(|d| is_iso_date(d));
+        push_url(&mut out, &site.url(path).unwrap_or_default(), lastmod);
     }
-
     out.push_str("</urlset>\n");
     out
 }

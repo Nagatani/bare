@@ -46,6 +46,22 @@ impl Template {
         fs::read_to_string(path).map(Self::new)
     }
 
+    /// Names of placeholders in the template that `context` does not provide.
+    pub fn unknown_tokens(&self, context: &Context) -> Vec<String> {
+        let mut unknown = Vec::new();
+        let mut rest = self.source.as_str();
+        while let Some(start) = rest.find("{{") {
+            let inner = &rest[start + 2..];
+            let Some(end) = inner.find("}}") else { break };
+            let key = inner[..end].trim();
+            if context.get(key).is_none() && !unknown.iter().any(|k| k == key) {
+                unknown.push(key.to_string());
+            }
+            rest = &inner[end + 2..];
+        }
+        unknown
+    }
+
     pub fn render(&self, context: &Context) -> String {
         let mut out = String::with_capacity(self.source.len());
         let mut rest = self.source.as_str();
@@ -81,6 +97,13 @@ mod tests {
             .with("title", "Hi")
             .with("content", "<p>{{title}}</p>");
         assert_eq!(tpl.render(&ctx), "<h1>Hi</h1><p>{{title}}</p>");
+    }
+
+    #[test]
+    fn lists_unknown_tokens() {
+        let tpl = Template::new("{{a}} {{ b }} {{a}} {{c}}");
+        let ctx = Context::new().with("c", "");
+        assert_eq!(tpl.unknown_tokens(&ctx), ["a", "b"]);
     }
 
     #[test]

@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+use crate::highlight;
+
 /// Key-value metadata read from the `---` block at the top of a document.
 #[derive(Debug, Default, Clone)]
 pub struct Frontmatter {
@@ -305,7 +307,9 @@ impl<'a> Blocks<'a> {
                 escape_html(lang)
             ));
         }
-        self.out.push_str(&escape_html(&lines.join("\n")));
+        let code = lines.join("\n");
+        let html = highlight::highlight(lang, &code).unwrap_or_else(|| escape_html(&code));
+        self.out.push_str(&html);
         self.out.push_str("</code></pre>\n");
     }
 
@@ -775,10 +779,11 @@ mod tests {
 
     #[test]
     fn escapes_code_blocks() {
-        let src = "```rust\nlet v: Vec<u8> = vec![];\n  {{title}}\n```";
+        // A language without a highlighter: plain, escaped text.
+        let src = "```text\nlet v: Vec<u8> = vec![];\n  {{title}}\n```";
         assert_eq!(
             md(src),
-            "<pre><code class=\"language-rust\">let v: Vec&lt;u8&gt; = vec![];\n  {{title}}</code></pre>\n"
+            "<pre><code class=\"language-text\">let v: Vec&lt;u8&gt; = vec![];\n  {{title}}</code></pre>\n"
         );
     }
 
