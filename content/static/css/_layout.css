@@ -1,5 +1,12 @@
 /* The page frame: centered column, sticky header, main area, footer. */
 @layer layout {
+  body {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-block-size: 100vh;
+    min-block-size: 100svh;
+  }
+
   .wrap {
     max-inline-size: var(--content-width);
     margin-inline: auto;
@@ -40,6 +47,7 @@
   }
 
   .site-main {
+    inline-size: 100%;
     padding-block: var(--space-8) 6rem;
 
     @media (width <= 480px) {
@@ -68,6 +76,11 @@
     .back,
     .pager {
       display: none;
+    }
+
+    body {
+      display: block;
+      min-block-size: 0;
     }
 
     .site-main {
