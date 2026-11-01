@@ -49,6 +49,9 @@ lang: ja
 `content/posts/` に Markdown ファイルを追加します。ファイル名がそのまま URL になります。
 たとえば `my-first-post.md` は `posts/my-first-post.html` として公開されます。
 
+Rust を入れてあれば、`cargo run -- new my-first-post --title "はじめての記事"` で
+今日の日付入りのファイルを作れます。作った記事は下書き（`draft: true`）なので、消すまで公開されません[^draft]。
+
 ```markdown
 ---
 title: はじめての記事
@@ -66,11 +69,15 @@ description: 一覧や SNS に表示される短い説明
 ```
 
 - `date` は `YYYY-MM-DD` で書くと、一覧が新着順に並びます（形式が違うとビルド時に警告が出ます）。
-- `description` は一覧ページ・検索結果・SNS のプレビュー・RSS の要約に使われます（省略可）。
+- `description` は一覧ページ・検索結果・SNS のプレビュー・RSS の要約に使われます。
+  省略すると、本文の最初の段落の先頭が代わりに使われます。
 - `image: /images/cover.png` を書くと、SNS で共有したときのプレビュー画像になります（省略可）。
 - `draft: true` を書いた記事は公開されません。手元で確認するときは `cargo run -- --drafts` を使います。
 - サンプル記事（この記事を含む 3 本）は削除して構いません。記事が 0 本になってもビルドは通ります。
 - 使える記法は [Hello, World](hello-world.html) の表にまとめています。
+- 見出し（`##`）が 2 つ以上ある記事には、自動で目次が付きます。読了時間の目安も表示されます。
+
+[^draft]: 下書きは `cargo run -- serve` のプレビューでは表示されるので、書きながら確認できます。
 
 画像やファイルは `content/static/` に置きます。中身はそのまま `dist/` にコピーされます。
 
@@ -101,6 +108,7 @@ frontmatter に `nav: 1` と書くと、ヘッダーのナビゲーションに�
 | ファイル | 用途 |
 | --- | --- |
 | `tags/` | タグ別の記事一覧。記事のタグをクリックすると開きます |
+| `archive.html` | 年別の記事一覧（`content/templates/archive.html`） |
 | `feed.xml` | Atom フィード。RSS リーダーで購読できます |
 | `sitemap.xml` | 検索エンジン向けのページ一覧 |
 | `404.html` | 存在しない URL を開いたときのページ（`content/templates/404.html`） |

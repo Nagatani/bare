@@ -2,8 +2,9 @@
 //!
 //! Everything here is plain string slicing over lines — no regex, no external
 //! Markdown crate. Supported blocks: headings, paragraphs, fenced code blocks,
-//! ordered/unordered lists, blockquotes, tables and thematic breaks. Supported
-//! inlines: code, links, images, `**strong**`, `*em*`, `~~del~~` and `\` escapes.
+//! ordered/unordered (nested, task) lists, blockquotes, tables, thematic breaks
+//! and footnotes. Supported inlines: code, links, images, `**strong**`, `*em*`,
+//! `~~del~~`, footnote references `[^1]` and `\` escapes.
 
 use std::collections::HashMap;
 
@@ -106,20 +107,70 @@ fn unquote(s: &str) -> &str {
     }
     s
 }
+/// A heading of the document, collected for the table of contents.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Heading {
+    pub level: usize,
+    pub id: String,
+    /// Rendered inline HTML of the heading text (without the `#` anchor).
+    pub html: String,
+}
+
+/// The HTML of a document plus what was collected while rendering it.
+#[derive(Debug)]
+pub struct Rendered {
+    pub html: String,
+    /// Top-level headings in document order.
+    pub headings: Vec<Heading>,
+}
 
 /// Converts the supported Markdown subset to HTML.
 ///
 /// `root` is the relative path from the rendered page to the site root (e.g. `"../"`).
 /// Link and image URLs starting with a single `/` are rewritten against it, so
 /// `/images/a.png` keeps working when the site is served from a sub-path.
+#[cfg(test)]
 pub fn markdown_to_html(markdown: &str, root: &str) -> String {
+    render_markdown(markdown, root).html
+}
+
+/// Like [`markdown_to_html`], also returning the headings for a table of contents.
+pub fn render_markdown(markdown: &str, root: &str) -> Rendered {
+    // NUL marks footnote references until they are numbered (see `finish_footnotes`).
+    let markdown = markdown.replace('\0', "");
+    let mut state = State {
+        root,
+        ids: HashMap::new(),
+        headings: Vec::new(),
+        footnotes: Vec::new(),
+        depth: 0,
+    };
+    let body = render_blocks(&markdown, &mut state);
+    let html = finish_footnotes(body, &state);
+    Rendered {
+        html,
+        headings: state.headings,
+    }
+}
+
+/// Values shared by a document and the blocks nested inside it (lists, quotes).
+struct State<'r> {
+    root: &'r str,
+    /// Heading ids used so far, for de-duplication.
+    ids: HashMap<String, usize>,
+    headings: Vec<Heading>,
+    /// Footnote definitions as (label, Markdown text), in source order.
+    footnotes: Vec<(String, String)>,
+    /// Nesting level: 0 for the document itself, more inside lists and quotes.
+    depth: usize,
+}
+
+fn render_blocks(markdown: &str, state: &mut State) -> String {
     let lines: Vec<&str> = markdown.lines().collect();
     let mut blocks = Blocks {
         out: String::with_capacity(markdown.len() * 2),
-        root,
+        state,
         paragraph: Vec::new(),
-        list: None,
-        ids: HashMap::new(),
     };
 
     let mut i = 0;
@@ -141,6 +192,20 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
 
         if trimmed.is_empty() {
             blocks.flush();
+        } else if let Some((label, text)) = parse_footnote_def(trimmed) {
+            blocks.flush();
+            // Indented lines right after the definition continue it.
+            let mut parts = vec![text];
+            i += 1;
+            while i < lines.len() && indent_of(lines[i]) >= 2 && !lines[i].trim().is_empty() {
+                parts.push(lines[i].trim());
+                i += 1;
+            }
+            if !blocks.state.footnotes.iter().any(|(l, _)| l == label) {
+                let text = join_lines(&parts);
+                blocks.state.footnotes.push((label.to_string(), text));
+            }
+            continue;
         } else if let Some((level, text)) = parse_heading(trimmed) {
             blocks.flush();
             blocks.heading(level, text);
@@ -157,10 +222,9 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
                 inner.push(rest.strip_prefix(' ').unwrap_or(rest));
                 i += 1;
             }
+            let html = blocks.nested(&inner.join("\n"));
             blocks.out.push_str("<blockquote>\n");
-            blocks
-                .out
-                .push_str(&markdown_to_html(&inner.join("\n"), root));
+            blocks.out.push_str(&html);
             blocks.out.push_str("</blockquote>\n");
             continue;
         } else if let Some(aligns) = table_alignments(trimmed, lines.get(i + 1).copied()) {
@@ -172,11 +236,13 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
             blocks.table(trimmed, &aligns, &lines[i + 2..end]);
             i = end;
             continue;
-        } else if let Some((kind, item)) = parse_list_item(trimmed) {
-            blocks.flush_paragraph();
-            blocks.push_item(kind, item);
+        } else if parse_list_item(trimmed).is_some() {
+            blocks.flush();
+            let end = list_end(&lines, i);
+            blocks.list(&lines[i..end]);
+            i = end;
+            continue;
         } else {
-            blocks.flush_list();
             blocks.paragraph.push(trimmed);
         }
         i += 1;
@@ -186,14 +252,11 @@ pub fn markdown_to_html(markdown: &str, root: &str) -> String {
     blocks.out
 }
 
-/// Output buffer plus the paragraph or list currently being collected.
-struct Blocks<'a> {
+/// Output buffer plus the paragraph currently being collected.
+struct Blocks<'a, 's, 'r> {
     out: String,
-    root: &'a str,
+    state: &'s mut State<'r>,
     paragraph: Vec<&'a str>,
-    list: Option<(ListKind, Vec<&'a str>)>,
-    /// Heading ids used so far, for de-duplication.
-    ids: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -211,22 +274,39 @@ enum Align {
     Right,
 }
 
-impl<'a> Blocks<'a> {
+impl Blocks<'_, '_, '_> {
     fn flush(&mut self) {
-        self.flush_paragraph();
-        self.flush_list();
+        if self.paragraph.is_empty() {
+            return;
+        }
+        let text = join_lines(&self.paragraph);
+        self.out.push_str("<p>");
+        self.out.push_str(&render_inline(&text, self.state.root));
+        self.out.push_str("</p>\n");
+        self.paragraph.clear();
+    }
+
+    /// Renders Markdown nested inside a list item or blockquote.
+    fn nested(&mut self, markdown: &str) -> String {
+        self.state.depth += 1;
+        let html = render_blocks(markdown, self.state);
+        self.state.depth -= 1;
+        html
     }
 
     /// Emits a heading with an `id` and a `#` self-link, so sections can be
     /// linked to directly (e.g. `posts/a.html#インストール`).
     fn heading(&mut self, level: usize, text: &str) {
-        let html = render_inline(text, self.root);
+        let html = render_inline(text, self.state.root);
         let id = self.unique_id(slugify(&strip_tags(&html)));
         self.out.push_str(&format!(
             "<h{level} id=\"{id}\">{html}<a class=\"heading-anchor\" href=\"#{id}\" \
              aria-hidden=\"true\" tabindex=\"-1\">#</a></h{level}>\n",
             id = escape_html(&id),
         ));
+        if self.state.depth == 0 {
+            self.state.headings.push(Heading { level, id, html });
+        }
     }
 
     fn unique_id(&mut self, base: String) -> String {
@@ -235,7 +315,7 @@ impl<'a> Blocks<'a> {
         } else {
             base
         };
-        let seen = self.ids.entry(base.clone()).or_insert(0);
+        let seen = self.state.ids.entry(base.clone()).or_insert(0);
         *seen += 1;
         match *seen {
             1 => base,
@@ -243,59 +323,81 @@ impl<'a> Blocks<'a> {
         }
     }
 
-    fn flush_paragraph(&mut self) {
-        if self.paragraph.is_empty() {
-            return;
+    /// Renders the lines of one list region (see [`list_end`]). Lines indented
+    /// past the item marker belong to the item and may hold nested lists, code
+    /// blocks or further paragraphs.
+    fn list(&mut self, lines: &[&str]) {
+        let base = indent_of(lines[0]);
+        let mut items: Vec<(ListKind, &str, Vec<&str>)> = Vec::new();
+        for &line in lines {
+            let marker = (indent_of(line) <= base)
+                .then(|| parse_list_item(line.trim()))
+                .flatten();
+            match (marker, items.last_mut()) {
+                (Some((kind, text)), _) => items.push((kind, text, Vec::new())),
+                (None, Some((_, _, children))) => children.push(line),
+                (None, None) => {}
+            }
         }
-        let text = join_lines(&self.paragraph);
-        self.out.push_str("<p>");
-        self.out.push_str(&render_inline(&text, self.root));
-        self.out.push_str("</p>\n");
-        self.paragraph.clear();
-    }
 
-    fn push_item(&mut self, kind: ListKind, item: &'a str) {
-        let same_kind = match &self.list {
-            Some((current, _)) => matches!(
-                (current, kind),
-                (ListKind::Unordered, ListKind::Unordered)
-                    | (ListKind::Ordered(_), ListKind::Ordered(_))
-            ),
-            None => false,
-        };
-        if !same_kind {
-            self.flush_list();
-            self.list = Some((kind, Vec::new()));
-        }
-        if let Some((_, items)) = self.list.as_mut() {
-            items.push(item);
-        }
-    }
+        let mut open: Option<ListKind> = None;
+        for (kind, text, children) in items {
+            let same_kind = matches!(
+                (open, kind),
+                (Some(ListKind::Unordered), ListKind::Unordered)
+                    | (Some(ListKind::Ordered(_)), ListKind::Ordered(_))
+            );
+            if !same_kind {
+                self.close_list(open);
+                self.out.push_str(&match kind {
+                    ListKind::Unordered => "<ul>\n".to_string(),
+                    ListKind::Ordered(1) => "<ol>\n".to_string(),
+                    ListKind::Ordered(start) => format!("<ol start=\"{start}\">\n"),
+                });
+                open = Some(kind);
+            }
 
-    fn flush_list(&mut self) {
-        let Some((kind, items)) = self.list.take() else {
-            return;
-        };
-        let close = match kind {
-            ListKind::Unordered => {
-                self.out.push_str("<ul>\n");
-                "</ul>\n"
+            // Plain lines right below the item continue its text.
+            let mut text_lines = vec![text];
+            let mut k = 0;
+            while k < children.len() {
+                let line = children[k].trim();
+                if line.is_empty() || starts_block(line) {
+                    break;
+                }
+                text_lines.push(line);
+                k += 1;
             }
-            ListKind::Ordered(1) => {
-                self.out.push_str("<ol>\n");
-                "</ol>\n"
+            let text = join_lines(&text_lines);
+            let (class, text) = match task_marker(&text) {
+                Some((done, rest)) => (
+                    " class=\"task\"",
+                    format!(
+                        "<label><input type=\"checkbox\" disabled{}> {}</label>",
+                        if done { " checked" } else { "" },
+                        render_inline(rest, self.state.root)
+                    ),
+                ),
+                None => ("", render_inline(&text, self.state.root)),
+            };
+            self.out.push_str(&format!("  <li{class}>{text}"));
+            let rest = &children[k..];
+            if rest.iter().any(|line| !line.trim().is_empty()) {
+                let html = self.nested(&dedent(rest));
+                self.out.push('\n');
+                self.out.push_str(&html);
             }
-            ListKind::Ordered(start) => {
-                self.out.push_str(&format!("<ol start=\"{start}\">\n"));
-                "</ol>\n"
-            }
-        };
-        for item in items {
-            self.out.push_str("  <li>");
-            self.out.push_str(&render_inline(item, self.root));
             self.out.push_str("</li>\n");
         }
-        self.out.push_str(close);
+        self.close_list(open);
+    }
+
+    fn close_list(&mut self, kind: Option<ListKind>) {
+        match kind {
+            Some(ListKind::Unordered) => self.out.push_str("</ul>\n"),
+            Some(ListKind::Ordered(_)) => self.out.push_str("</ol>\n"),
+            None => {}
+        }
     }
 
     fn code_block(&mut self, lang: &str, lines: &[&str]) {
@@ -337,11 +439,248 @@ impl<'a> Blocks<'a> {
                 Align::Right => " style=\"text-align: right\"",
             };
             // `\|` is a literal pipe in a cell, even inside a code span.
-            let html = render_inline(&cell.replace("\\|", "|"), self.root);
+            let html = render_inline(&cell.replace("\\|", "|"), self.state.root);
             self.out.push_str(&format!("<{tag}{style}>{html}</{tag}>"));
         }
         self.out.push_str("</tr>\n");
     }
+}
+
+/// Returns the end (exclusive) of the list starting at `lines[start]`: following
+/// list items and lines indented deeper than the first marker belong to it, also
+/// across blank lines. A non-indented line of other text ends the list.
+fn list_end(lines: &[&str], start: usize) -> usize {
+    let base = indent_of(lines[start]);
+    let belongs = |line: &str| indent_of(line) > base || parse_list_item(line.trim()).is_some();
+    let mut end = start + 1;
+    let mut i = start + 1;
+    while i < lines.len() {
+        if lines[i].trim().is_empty() {
+            match (i + 1..lines.len()).find(|&k| !lines[k].trim().is_empty()) {
+                Some(next) if belongs(lines[next]) => i = next,
+                _ => break,
+            }
+        }
+        if !belongs(lines[i]) {
+            break;
+        }
+        i += 1;
+        end = i;
+    }
+    end
+}
+
+/// Lines inside a list item that start their own block rather than continue the text.
+fn starts_block(line: &str) -> bool {
+    parse_list_item(line).is_some()
+        || parse_fence(line).is_some()
+        || parse_heading(line).is_some()
+        || line.starts_with('>')
+        || line.starts_with('|')
+}
+
+/// `[ ] text` / `[x] text` at the start of a list item (a task list).
+fn task_marker(text: &str) -> Option<(bool, &str)> {
+    let done = match text.get(..4)? {
+        "[ ] " => false,
+        "[x] " | "[X] " => true,
+        _ => return None,
+    };
+    Some((done, &text[4..]))
+}
+
+/// Width of the leading whitespace, counting a tab as four spaces.
+fn indent_of(line: &str) -> usize {
+    line.chars()
+        .take_while(|c| c.is_whitespace())
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
+}
+
+/// Removes the common leading indentation from `lines`.
+fn dedent(lines: &[&str]) -> String {
+    let width = lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| indent_of(line))
+        .min()
+        .unwrap_or(0);
+    let mut out = String::new();
+    for line in lines {
+        let mut removed = 0;
+        let mut rest = *line;
+        while removed < width {
+            match rest.chars().next() {
+                Some(' ') => removed += 1,
+                Some('\t') => removed += 4,
+                _ => break,
+            }
+            rest = &rest[1..];
+        }
+        out.push_str(rest);
+        out.push('\n');
+    }
+    out
+}
+
+/// Recognises a footnote definition `[^label]: text`.
+fn parse_footnote_def(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("[^")?;
+    let (label, text) = rest.split_once("]:")?;
+    let valid = !label.is_empty() && !label.contains(|c: char| c.is_whitespace() || c == ']');
+    valid.then(|| (label, text.trim()))
+}
+
+/// Start and end of the placeholder `render_inline` writes for `[^label]`.
+const FOOTNOTE_OPEN: &str = "\0fn:";
+const FOOTNOTE_CLOSE: char = '\0';
+
+/// Numbers footnote references in the order they appear, links them to their
+/// definitions, and appends the footnote list. References without a definition
+/// stay as literal text; definitions that are never referenced are left out.
+fn finish_footnotes(body: String, state: &State) -> String {
+    if !body.contains(FOOTNOTE_OPEN) {
+        return body;
+    }
+    let defined = |label: &str| state.footnotes.iter().any(|(l, _)| l == label);
+    let mut order: Vec<&str> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
+    let body = replace_footnote_refs(&body, |label| {
+        if !defined(label) {
+            return None;
+        }
+        let n = match order.iter().position(|l| *l == label) {
+            Some(index) => index,
+            None => {
+                order.push(state.footnotes.iter().find(|(l, _)| l == label)?.0.as_str());
+                counts.push(0);
+                order.len() - 1
+            }
+        };
+        counts[n] += 1;
+        let number = n + 1;
+        let id = match counts[n] {
+            1 => format!("fnref-{number}"),
+            count => format!("fnref-{number}-{count}"),
+        };
+        Some(format!(
+            "<sup class=\"footnote-ref\"><a href=\"#fn-{number}\" id=\"{id}\" \
+             role=\"doc-noteref\">{number}</a></sup>"
+        ))
+    });
+
+    let mut out = body;
+    out.push_str("<section class=\"footnotes\" role=\"doc-endnotes\">\n<ol>\n");
+    for (index, label) in order.iter().enumerate() {
+        let number = index + 1;
+        let text = state
+            .footnotes
+            .iter()
+            .find(|(l, _)| l == label)
+            .map(|(_, text)| text.as_str())
+            .unwrap_or_default();
+        // A reference inside a footnote links to its note but gets no number of its own.
+        let html = replace_footnote_refs(&render_inline(text, state.root), |inner| {
+            let n = order.iter().position(|l| *l == inner)? + 1;
+            Some(format!(
+                "<sup class=\"footnote-ref\"><a href=\"#fn-{n}\">{n}</a></sup>"
+            ))
+        });
+        out.push_str(&format!(
+            "  <li id=\"fn-{number}\">{html} <a href=\"#fnref-{number}\" class=\"footnote-back\" \
+             role=\"doc-backlink\">↩\u{fe0e}</a></li>\n"
+        ));
+    }
+    out.push_str("</ol>\n</section>\n");
+    out
+}
+
+/// Replaces each footnote placeholder with `link(label)`, or with the literal
+/// `[^label]` when that returns `None`.
+fn replace_footnote_refs(html: &str, mut link: impl FnMut(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find(FOOTNOTE_OPEN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + FOOTNOTE_OPEN.len()..];
+        let end = after.find(FOOTNOTE_CLOSE).unwrap_or(after.len());
+        let label = &after[..end];
+        match link(label) {
+            Some(html) => out.push_str(&html),
+            None => out.push_str(&escape_html(&format!("[^{label}]"))),
+        }
+        rest = after.get(end + 1..).unwrap_or("");
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Renders a nested `<ol>` table of contents from the two highest heading levels
+/// present. Returns an empty string for fewer than two entries.
+pub fn render_toc(headings: &[Heading]) -> String {
+    let Some(top) = headings.iter().map(|h| h.level).min() else {
+        return String::new();
+    };
+    let entries: Vec<&Heading> = headings.iter().filter(|h| h.level <= top + 1).collect();
+    if entries.len() < 2 {
+        return String::new();
+    }
+    let mut out = String::from("<ol class=\"toc\">\n");
+    let mut sub_open = false;
+    let mut item_open = false;
+    for heading in entries {
+        let link = format!(
+            "<a href=\"#{}\">{}</a>",
+            escape_html(&heading.id),
+            toc_text(&heading.html)
+        );
+        if heading.level > top && item_open {
+            if !sub_open {
+                out.push_str("\n<ol>\n");
+                sub_open = true;
+            }
+            out.push_str(&format!("<li>{link}</li>\n"));
+            continue;
+        }
+        if sub_open {
+            out.push_str("</ol>\n");
+            sub_open = false;
+        }
+        if item_open {
+            out.push_str("</li>\n");
+        }
+        out.push_str(&format!("<li>{link}"));
+        item_open = true;
+    }
+    if sub_open {
+        out.push_str("</ol>\n");
+    }
+    if item_open {
+        out.push_str("</li>\n");
+    }
+    out.push_str("</ol>");
+    out
+}
+
+/// Heading HTML for use inside a TOC link: nested links and footnote
+/// placeholders removed, other inline markup (e.g. `<code>`) kept.
+fn toc_text(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(c) = rest.chars().next() {
+        if rest.starts_with("<a ") || rest.starts_with("</a>") {
+            let end = rest.find('>').map_or(rest.len(), |i| i + 1);
+            rest = &rest[end..];
+        } else if rest.starts_with(FOOTNOTE_OPEN) {
+            let after = &rest[FOOTNOTE_OPEN.len()..];
+            let end = after.find(FOOTNOTE_CLOSE).map_or(after.len(), |i| i + 1);
+            rest = &after[end..];
+        } else {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
 }
 
 struct Fence<'a> {
@@ -468,6 +807,7 @@ fn strip_tags(html: &str) -> String {
             (Some(end), _) if c == end => skip_until = None,
             (Some(_), _) => {}
             (None, '<') => skip_until = Some('>'),
+            (None, FOOTNOTE_CLOSE) => skip_until = Some(FOOTNOTE_CLOSE),
             (None, '&') => skip_until = Some(';'),
             (None, _) => out.push(c),
         }
@@ -564,6 +904,13 @@ fn render_inline(text: &str, root: &str) -> String {
                 }
             }
             '[' => {
+                if let Some(label) = footnote_ref(rest) {
+                    out.push_str(FOOTNOTE_OPEN);
+                    out.push_str(label);
+                    out.push(FOOTNOTE_CLOSE);
+                    rest = &rest[label.len() + 3..];
+                    continue;
+                }
                 if let Some(link) = parse_link(rest) {
                     out.push_str(&format!(
                         "<a href=\"{}\"{}>{}</a>",
@@ -601,6 +948,16 @@ fn render_inline(text: &str, root: &str) -> String {
         rest = &rest[c.len_utf8()..];
     }
     out
+}
+
+/// Label of a footnote reference `[^label]` at the start of `s`.
+fn footnote_ref(s: &str) -> Option<&str> {
+    let rest = s.strip_prefix("[^")?;
+    let label = &rest[..rest.find(']')?];
+    let valid = !label.is_empty() && !label.contains(|c: char| c.is_whitespace() || c == '[');
+    // `[^x](url)` is a link, not a footnote.
+    let is_link = rest[label.len() + 1..].starts_with('(');
+    (valid && !is_link).then_some(label)
 }
 
 /// Finds the byte offset of a run of exactly `len` backticks in `s`.
@@ -862,5 +1219,59 @@ mod tests {
             render_inline("[w](https://en.wikipedia.org/wiki/Rust_(lang)) [p](//cdn.example/x)", "../"),
             "<a href=\"https://en.wikipedia.org/wiki/Rust_(lang)\">w</a> <a href=\"//cdn.example/x\">p</a>"
         );
+    }
+
+    #[test]
+    fn renders_nested_and_task_lists() {
+        let src = "- a\n  continued\n  - b\n    1. c\n- [x] done\n- [ ] todo\n\n  more\n\nafter";
+        assert_eq!(
+            md(src),
+            "<ul>\n  <li>a continued\n<ul>\n  <li>b\n<ol>\n  <li>c</li>\n</ol>\n</li>\n</ul>\n</li>\n\
+             \x20 <li class=\"task\"><label><input type=\"checkbox\" disabled checked> done</label></li>\n\
+             \x20 <li class=\"task\"><label><input type=\"checkbox\" disabled> todo</label>\n<p>more</p>\n</li>\n\
+             </ul>\n<p>after</p>\n"
+        );
+    }
+
+    #[test]
+    fn list_items_can_hold_code_blocks() {
+        let src = "1. run:\n\n   ```text\n   cargo run\n   ```\n2. done";
+        assert_eq!(
+            md(src),
+            "<ol>\n  <li>run:\n<pre><code class=\"language-text\">cargo run</code></pre>\n</li>\n\
+             \x20 <li>done</li>\n</ol>\n"
+        );
+    }
+
+    #[test]
+    fn renders_footnotes_in_reference_order() {
+        let src = "B[^b] and A[^a], B again[^b], none[^x].\n\n[^a]: Note *A*.\n[^b]: Note B\n  continued.\n[^unused]: Never shown.";
+        let html = md(src);
+        assert!(html.starts_with(
+            "<p>B<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\" role=\"doc-noteref\">1</a></sup> and \
+             A<sup class=\"footnote-ref\"><a href=\"#fn-2\" id=\"fnref-2\" role=\"doc-noteref\">2</a></sup>, \
+             B again<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1-2\" role=\"doc-noteref\">1</a></sup>, none[^x].</p>"
+        ));
+        assert!(html.contains("<li id=\"fn-1\">Note B continued. <a href=\"#fnref-1\""));
+        assert!(html.contains("<li id=\"fn-2\">Note <em>A</em>. <a href=\"#fnref-2\""));
+        assert!(!html.contains("Never shown"));
+        assert_eq!(md("[^x](/a)"), "<p><a href=\"../a\">^x</a></p>\n");
+    }
+
+    #[test]
+    fn builds_table_of_contents() {
+        let doc = render_markdown(
+            "# Skip?\n## One\n### Sub [link](x)\n## Two\n#### deep\n> ## quoted",
+            "",
+        );
+        // Levels are relative to the highest present (here h1), so h3 is left out.
+        assert_eq!(doc.headings.len(), 5);
+        let doc = render_markdown("## One\n### Sub [link](x)\n## Two `code`\n#### deep", "");
+        assert_eq!(
+            render_toc(&doc.headings),
+            "<ol class=\"toc\">\n<li><a href=\"#one\">One</a>\n<ol>\n<li><a href=\"#sub-link\">Sub link</a></li>\n</ol>\n</li>\n\
+             <li><a href=\"#two-code\">Two <code>code</code></a></li>\n</ol>"
+        );
+        assert_eq!(render_toc(&render_markdown("## Only", "").headings), "");
     }
 }

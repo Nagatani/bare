@@ -7,10 +7,12 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::assets::Fingerprints;
 use crate::feed;
 use crate::images;
 use crate::parser::{self, escape_html};
 use crate::template::{Context, Template};
+use crate::text;
 
 /// Where to read sources from and where to write the generated site.
 #[derive(Debug, Clone)]
@@ -35,12 +37,26 @@ pub(crate) struct Post {
     pub image: Option<String>,
     pub tags: Vec<String>,
     pub html: String,
+    /// Table of contents (`{{toc}}`); empty for short posts.
+    toc: String,
+    /// Start of the first paragraph, used when there is no description.
+    excerpt: String,
+    reading_minutes: usize,
 }
 
 impl Post {
     /// Path of the rendered page relative to the site root, URL-encoded.
     pub fn path(&self) -> String {
         format!("posts/{}.html", encode_path(&self.slug))
+    }
+
+    /// The description, or else an excerpt of the post.
+    pub fn summary(&self) -> &str {
+        self.description.as_deref().unwrap_or(&self.excerpt)
+    }
+
+    fn year(&self) -> &str {
+        self.date.get(..4).unwrap_or("")
     }
 }
 
@@ -54,6 +70,7 @@ struct Page {
     /// Position in the header navigation; pages without it are not listed.
     nav: Option<i64>,
     html: String,
+    toc: String,
 }
 
 impl Page {
@@ -282,6 +299,7 @@ struct Templates {
     index: Template,
     // The rest are optional, so forks with older template sets keep building.
     page: Option<Template>,
+    archive: Option<Template>,
     tag: Option<Template>,
     tags: Option<Template>,
     not_found: Option<Template>,
@@ -302,6 +320,7 @@ impl Templates {
             post: load("post.html")?,
             index: load("index.html")?,
             page: optional("page.html")?,
+            archive: optional("archive.html")?,
             tag: optional("tag.html")?,
             tags: optional("tags.html")?,
             not_found: optional("404.html")?,
@@ -433,7 +452,13 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     let link_tags = templates.tag.is_some();
 
     let mut written = Vec::new();
+    let base_path = site.base_path();
+    let mut fingerprints = Fingerprints::new(&config.out_dir, &base_path);
     let mut write = |path: PathBuf, contents: String| -> Result<(), BuildError> {
+        let contents = match (path.extension(), path.parent()) {
+            (Some(ext), Some(dir)) if ext == "html" => fingerprints.apply(&contents, dir),
+            _ => contents,
+        };
         fs::write(&path, contents).at(&path)?;
         written.push(path);
         Ok(())
@@ -452,6 +477,8 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 escape_html(post.description.as_deref().unwrap_or("")),
             )
             .with("tags", render_tags(&post.tags, link_tags.then_some(root)))
+            .with("toc", post.toc.clone())
+            .with("reading_minutes", post.reading_minutes.to_string())
             .with(
                 "content",
                 images::add_dimensions(&post.html, &config.out_dir, &posts_out),
@@ -459,7 +486,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         let body = r.render("post.html", &templates.post, &context);
         let meta = PageMeta {
             title: &post.title,
-            description: post.description.as_deref(),
+            description: Some(post.summary()),
             path: Some(&path),
             image: post.image.as_deref(),
             published: Some(&post.date),
@@ -486,6 +513,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             .with("title", escape_html(&page.title))
             .with("date", "")
             .with("tags", "")
+            .with("toc", page.toc.clone())
             .with(
                 "description",
                 escape_html(page.description.as_deref().unwrap_or("")),
@@ -525,6 +553,29 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     };
     let html = r.layout(&templates.layout, &site.title, &meta, Some(""), body);
     write(config.out_dir.join("index.html"), html)?;
+
+    if let Some(archive) = &templates.archive {
+        let context = r
+            .context("")
+            .with("archive", render_archive(&posts, link_tags))
+            .with("post_count", posts.len().to_string());
+        let body = r.render("archive.html", archive, &context);
+        let meta = PageMeta {
+            title: "Archive",
+            description: None,
+            path: Some("archive.html"),
+            image: None,
+            published: None,
+            root: "",
+        };
+        let page_title = format!("Archive · {}", site.title);
+        let html = r.layout(&templates.layout, &page_title, &meta, None, body);
+        write(config.out_dir.join("archive.html"), html)?;
+        sitemap.push((
+            "archive.html".to_string(),
+            posts.first().map(|p| p.date.clone()),
+        ));
+    }
 
     if let Some(tag_template) = &templates.tag {
         let groups = group_by_tag(&posts);
@@ -617,7 +668,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         static_files,
         warnings,
         notes,
-        base_path: site.base_path(),
+        base_path,
     })
 }
 
@@ -731,14 +782,18 @@ fn load_posts(
                     path.display()
                 ));
             }
+            // Posts live in posts/, one level below the site root.
+            let rendered = parser::render_markdown(&doc.body, "../");
             Post {
                 title: meta.get("title").unwrap_or(&slug).to_string(),
                 date,
                 description: optional(meta, "description"),
                 image: optional(meta, "image"),
                 tags: meta.tags(),
-                // Posts live in posts/, one level below the site root.
-                html: parser::markdown_to_html(&doc.body, "../"),
+                toc: parser::render_toc(&rendered.headings),
+                excerpt: text::excerpt(&rendered.html),
+                reading_minutes: text::reading_minutes(&rendered.html),
+                html: rendered.html,
                 slug,
             }
         })
@@ -762,13 +817,15 @@ fn load_pages(
             continue;
         }
         let meta = &doc.frontmatter;
+        // Pages are written at the site root.
+        let rendered = parser::render_markdown(&doc.body, "");
         pages.push(Page {
             title: meta.get("title").unwrap_or(&slug).to_string(),
             description: optional(meta, "description"),
             image: optional(meta, "image"),
             nav: meta.get("nav").and_then(|v| v.trim().parse().ok()),
-            // Pages are written at the site root.
-            html: parser::markdown_to_html(&doc.body, ""),
+            toc: parser::render_toc(&rendered.headings),
+            html: rendered.html,
             slug,
         });
     }
@@ -875,11 +932,10 @@ fn render_tags(tags: &[String], root: Option<&str>) -> String {
 fn render_post_list(posts: &[&Post], root: &str, link_tags: bool) -> String {
     let mut out = String::new();
     for post in posts {
-        let description = post
-            .description
-            .as_deref()
-            .map(|d| format!("<p class=\"post-desc\">{}</p>", escape_html(d)))
-            .unwrap_or_default();
+        let description = match post.summary() {
+            "" => String::new(),
+            summary => format!("<p class=\"post-desc\">{}</p>", escape_html(summary)),
+        };
         out.push_str(&format!(
             "<li class=\"post-item\">\
              <time datetime=\"{date}\">{date}</time>\
@@ -890,6 +946,31 @@ fn render_post_list(posts: &[&Post], root: &str, link_tags: bool) -> String {
             title = escape_html(&post.title),
             tags = render_tags(&post.tags, link_tags.then_some(root)),
         ));
+    }
+    out
+}
+
+/// Renders posts grouped by year, newest first, for `{{archive}}`.
+fn render_archive(posts: &[Post], link_tags: bool) -> String {
+    let mut out = String::new();
+    let mut start = 0;
+    while start < posts.len() {
+        let year = posts[start].year();
+        let end = posts[start..]
+            .iter()
+            .position(|post| post.year() != year)
+            .map_or(posts.len(), |n| start + n);
+        let group: Vec<&Post> = posts[start..end].iter().collect();
+        let label = if year.is_empty() { "----" } else { year };
+        out.push_str(&format!(
+            "<section class=\"archive-year\">\n<h2 id=\"y{id}\">{label}<span class=\"tag-count\">{count}</span></h2>\n\
+             <ul class=\"post-list\">\n{list}</ul>\n</section>\n",
+            id = escape_html(label),
+            label = escape_html(label),
+            count = group.len(),
+            list = render_post_list(&group, "", link_tags),
+        ));
+        start = end;
     }
     out
 }

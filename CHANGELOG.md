@@ -8,6 +8,12 @@
 ## Unreleased
 
 ### 追加
+- `bare new <名前>`: 今日の日付と `draft: true` 入りの記事ファイルを作成（`--page` で固定ページ）
+- 目次 `{{toc}}`（見出しが 2 つ以上ある記事・固定ページ）と読了時間 `{{reading_minutes}}`
+- `description` を省略したとき、本文の最初の段落から抜粋を作って一覧・OGP・フィードに使用
+- 年別アーカイブ `archive.html`（`content/templates/archive.html` がある場合）
+- Markdown: 入れ子のリスト、リスト項目内のコードブロックや段落、タスクリスト `- [x]`、脚注 `[^1]`
+- CSS / JS の URL に内容のハッシュ `?v=…` を自動付与（キャッシュ対策。テンプレートの変更は不要）
 - `bare serve`: 保存すると再ビルドして自動リロードするプレビューサーバー（GitHub Pages と同じサブパス・404 の挙動）
 - `bare check`: 生成した HTML の内部リンク・`#アンカー`・画像のリンク切れを検査（CI はこれに通ったときだけデプロイ）
 - ビルド時のシンタックスハイライト（Rust・TOML・YAML・JSON・シェル・JS/TS・Python・Go・C 系・CSS・SQL・HTML・diff）
@@ -16,6 +22,7 @@
 - Markdown の画像に `width` / `height` を自動付与（PNG・GIF・JPEG・WebP・SVG）
 - テンプレートに未定義のプレースホルダーがあると警告
 - CSS を `content/static/css/style.css` に分離し、`@layer`・`light-dark()`・CSS ネスト・コンテナクエリで再構成
+- `--color-muted` の明るいテーマの色を少し濃く（`#6b7280` → `#646b78`。背景色付きの要素でもコントラスト比 4.5:1 を満たすため）
 - 自分用の上書きスタイル `content/static/css/custom.css`（本家では変更しません）
 - 見出しに `id` と `#` リンクを付与（ページ内リンク用）
 - 「本文へ移動」スキップリンク、印刷用スタイル
@@ -30,6 +37,10 @@
 - 日本語やスペースを含むファイル名のリンクを URL エンコード
 
 ### テンプレートの変更
+- `post.html`: メタ情報に `<span>約 {{reading_minutes}} 分で読めます</span>`、ヘッダーの後に
+  `<details class="toc-box" open><summary>目次</summary>{{toc}}</details>` を追加
+- `archive.html`: 新規（任意）
+- `index.html`: 年別アーカイブへのリンク `<a href="{{root}}archive.html">年別アーカイブ</a>` を追加
 - `tag.html` / `tags.html` / `page.html`: 新規（任意。置くとタグ別ページ・タグ一覧・固定ページ専用の表示になる）
 - `index.html`: タグ一覧へのリンク `<a href="{{root}}tags/">タグ一覧</a>` を追加
 - `layout.html`

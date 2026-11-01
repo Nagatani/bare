@@ -27,9 +27,26 @@ Markdown を書いて `cargo run` するだけで、`dist/` に HTML が出力�
 | コード | `` `code` `` | `code` |
 | リンク | `[text](url)` | [bare](https://github.com/Nagatani/bare) |
 | 画像 | `![alt](/images/a.png)` | 上の図 |
-| リスト | `- item` / `1. item` | 箇条書き・番号付き |
+| リスト | `- item` / `1. item`（字下げで入れ子） | 下を参照 |
+| タスク | `- [x] 済` / `- [ ] 未` | 下を参照 |
+| 脚注 | `本文[^1]` と `[^1]: 注釈` | 下を参照[^footnote] |
 | 引用 | `> text` | 下を参照 |
 | 表 | `\| a \| b \|` | この表 |
+
+リストは 2 文字以上字下げすると入れ子になり、項目の中にコードブロックも書けます。
+
+- 記事を書く
+  - [x] `content/posts/` に Markdown を置く
+  - [ ] `draft: true` を消して公開する
+- 確認する
+  1. `cargo run -- serve` でプレビュー
+  2. `cargo run -- check` でリンク切れを検査
+
+     ```sh
+     cargo run -- check
+     ```
+
+[^footnote]: 脚注は番号が自動で振られ、記事の末尾にまとめて表示されます。
 
 > 画像のパスは `/images/...` のようにサイトのルートから書けます。
 > GitHub Pages のサブパス（`/bare/` など）で公開しても、自動で正しい相対パスに変換されます。

@@ -1,13 +1,16 @@
 //! bare — a zero-dependency, minimalist static site generator.
 
+mod assets;
 mod check;
 mod feed;
 mod highlight;
 mod images;
 mod parser;
+mod scaffold;
 mod serve;
 mod site;
 mod template;
+mod text;
 
 use std::env;
 use std::path::PathBuf;
@@ -15,6 +18,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use check::Severity;
+use scaffold::NewOptions;
 use serve::ServeOptions;
 use site::Config;
 
@@ -25,6 +29,8 @@ USAGE:
     bare [build] [OPTIONS]   Build the site into the output directory
     bare check [OPTIONS]     Build, then fail on broken links or anchors
     bare serve [OPTIONS]     Preview with rebuild on change and live reload
+    bare new <NAME> [--title <TITLE>] [--page]
+                             Create content/posts/NAME.md (a draft) or pages/NAME.md
 
 OPTIONS:
     -c, --content <DIR>   Source directory with posts/ and templates/  [default: content]
@@ -35,6 +41,8 @@ OPTIONS:
                           [default: base_url in site.conf]
     -p, --port <PORT>     Port for serve                               [default: 3000]
         --subpath <PATH>  URL path for serve, e.g. /bare/  [default: detected like GitHub Pages]
+        --title <TITLE>   Title for new                                [default: NAME]
+        --page            Make new create a standalone page instead of a post
     -h, --help            Print this help
     -V, --version         Print version";
 
@@ -42,6 +50,7 @@ enum Command {
     Build(Config),
     Check(Config),
     Serve(Config, ServeOptions),
+    New(Config, NewOptions),
     Help,
     Version,
 }
@@ -58,6 +67,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
         port: 3000,
         subpath: None,
     };
+    let mut new = NewOptions {
+        slug: String::new(),
+        title: None,
+        page: false,
+    };
     let mut mode = "build";
     let mut out_given = false;
     let mut args = args.into_iter();
@@ -67,11 +81,17 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
             "build" => mode = "build",
             "check" => mode = "check",
             "serve" => mode = "serve",
+            "new" if mode == "build" => mode = "new",
+            "--page" => new.page = true,
+            name if mode == "new" && new.slug.is_empty() && !name.starts_with('-') => {
+                new.slug = name.to_string();
+            }
             "-h" | "--help" | "help" => return Ok(Command::Help),
             "-V" | "--version" => return Ok(Command::Version),
             "--clean" => config.clean = true,
             "--drafts" => config.drafts = true,
-            "-c" | "--content" | "-o" | "--out" | "--base-url" | "-p" | "--port" | "--subpath" => {
+            "-c" | "--content" | "-o" | "--out" | "--base-url" | "-p" | "--port" | "--subpath"
+            | "--title" => {
                 let value = args
                     .next()
                     .ok_or_else(|| format!("missing value for `{arg}`"))?;
@@ -87,6 +107,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
                             .map_err(|_| format!("invalid port `{value}`"))?;
                     }
                     "--subpath" => serve.subpath = Some(value),
+                    "--title" => new.title = Some(value),
                     _ => config.base_url = Some(value),
                 }
             }
@@ -96,6 +117,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
 
     Ok(match mode {
         "check" => Command::Check(config),
+        "new" if new.slug.is_empty() => return Err("missing NAME for `new`".to_string()),
+        "new" => Command::New(config, new),
         "serve" => {
             // Keep preview builds (with localhost URLs) out of the publishable dist/.
             if !out_given {
@@ -132,6 +155,18 @@ fn main() -> ExitCode {
             }
             Some(_) => println!("bare check: no broken links"),
             None => return ExitCode::FAILURE,
+        },
+        Command::New(config, options) => match scaffold::create(&config.content_dir, &options) {
+            Ok(path) => {
+                println!("bare: created {}", path.display());
+                if !options.page {
+                    println!("  it is a draft: preview with `bare serve`, remove `draft: true` to publish");
+                }
+            }
+            Err(err) => {
+                eprintln!("error: {err}");
+                return ExitCode::FAILURE;
+            }
         },
         Command::Serve(config, options) => {
             if let Err(err) = serve::serve(config, options, |config| build(config, false).is_some())

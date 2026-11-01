@@ -62,10 +62,11 @@ pub(crate) fn atom(site: &SiteMeta, posts: &[Post]) -> String {
         out.push_str(&format!("    <id>{}</id>\n", escape_html(&url)));
         out.push_str(&format!("    <published>{date}</published>\n"));
         out.push_str(&format!("    <updated>{date}</updated>\n"));
-        if let Some(description) = &post.description {
+        let summary = post.summary();
+        if !summary.is_empty() {
             out.push_str(&format!(
                 "    <summary>{}</summary>\n",
-                escape_html(description)
+                escape_html(summary)
             ));
         }
         for tag in &post.tags {

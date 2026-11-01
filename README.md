@@ -23,8 +23,9 @@ GitHub Actions はこのチェックに通ったときだけデプロイする�
 ### 何もしなくても速いページ
 | 項目 | 値（このデモサイト） |
 | --- | --- |
+| Lighthouse | 全 7 ページ（記事・固定ページ・一覧・タグ・アーカイブ）で 4 項目すべて 100（モバイル / デスクトップとも） |
 | JavaScript | 0 バイト |
-| トップページの転送量（HTML + CSS、gzip） | 約 5KB |
+| トップページの転送量（HTML + CSS、gzip） | 約 6KB |
 | 画像の `width` / `height` | 自動で付与（表示時にレイアウトがずれない） |
 | コードのシンタックスハイライト | ビルド時に生成（JavaScript 不要） |
 
@@ -37,10 +38,12 @@ GitHub Actions はこのチェックに通ったときだけデプロイする�
 | 項目 | 値 |
 | --- | --- |
 | 外部クレート | 0（サプライチェーン攻撃の入り口がない） |
-| Rust のコード | 約 4,000 行（テストとハイライト用のキーワード表を含む） |
-| クリーンな状態からのリリースビルド | 約 1.2 秒 |
-| バイナリ | 約 830KB |
-| このサイトの生成 | 約 30ms |
+| Rust のコード | 約 4,900 行（テストとハイライト用のキーワード表を含む） |
+| クリーンな状態からのリリースビルド | 約 1.7 秒 |
+| バイナリ | 約 920KB |
+| このサイトの生成（リンク検査込み） | 約 25ms |
+
+Lighthouse の値は、Lighthouse 12.6（`npx lighthouse`）でローカル配信したこのリポジトリのサイトを計測したものです。
 
 ### 原稿がどこにも縛られない
 独自のショートコードはありません。GitHub 上でそのまま表示できる Markdown だけで書くので、
@@ -65,6 +68,9 @@ Rust のインストールは不要で、ビルドと公開は GitHub Actions �
 # 手元でプレビュー（保存すると自動で再ビルドし、ブラウザも自動でリロード）
 cargo run -- serve
 
+# 新しい記事（下書き）を今日の日付で作る
+cargo run -- new my-post --title "記事のタイトル"
+
 # ビルドして content/ から dist/ を生成
 cargo run
 
@@ -80,6 +86,7 @@ cargo test
 | `bare` / `bare build` | `dist/` にサイトを生成。リンク切れなどは警告として表示 |
 | `bare check` | ビルドしたうえで、リンク切れ・存在しないアンカー・画像があれば終了コード 1 |
 | `bare serve` | `http://127.0.0.1:3000/<リポジトリ名>/` でプレビュー。下書きも表示 |
+| `bare new <名前>` | `content/posts/<名前>.md` を今日の日付・`draft: true` 付きで作成。`--title` でタイトル、`--page` で固定ページ（`content/pages/`） |
 
 | オプション | 内容 |
 | --- | --- |
@@ -103,6 +110,7 @@ cargo test
 - 通常のビルドでは `dist/posts/` と `dist/tags/` だけを作り直し、`dist/` 直下の他のファイルは残します。
 - `--clean` では作業ディレクトリや `content/` を含むディレクトリ（`--out .` など）の削除を拒否します。
 - `content/static/` の中身（画像・CSS・favicon・`CNAME` など）は、構造を保ったまま `dist/` にコピーされます。
+- ページから読み込む CSS / JS には `?v=<内容のハッシュ>` を自動で付けます。CSS を変えたときだけブラウザが取り直すので、古いデザインが残りません。
 
 ## GitHub Pages で公開する
 
@@ -127,6 +135,7 @@ PR とブランチでは `.github/workflows/ci.yml` がフォーマット・clip
 | `posts/<ファイル名>.html` | 各記事 |
 | `<ファイル名>.html` | 固定ページ（`content/pages/`） |
 | `tags/<タグ>.html` / `tags/index.html` | タグ別の記事一覧 / タグ一覧（`templates/tag.html` / `tags.html` がある場合） |
+| `archive.html` | 年別の記事一覧（`templates/archive.html` がある場合） |
 | `404.html` | 存在しない URL 用のページ（`templates/404.html` がある場合） |
 | `feed.xml` | Atom フィード（最新 20 件。公開 URL が分かる場合） |
 | `sitemap.xml` | サイトマップ（公開 URL が分かる場合） |
@@ -151,7 +160,10 @@ draft: true
 
 - `date` は `YYYY-MM-DD` で書くと、一覧が新着順に並びます（形式が違うと警告）。
 - `tags` は `[a, b]` と `a, b` のどちらの書き方でも構いません。タグはタグ別ページへのリンクになります。
+- `description` を省略すると、本文の最初の段落の先頭（120 文字まで）が一覧・検索結果・SNS・RSS に使われます。
 - `image` は SNS で共有したときのプレビュー画像です（任意）。
+- 見出しが 2 つ以上ある記事には目次（`{{toc}}`）が付きます。読了時間の目安（`{{reading_minutes}}`）は、
+  日本語 500 字 / 分・英語 200 語 / 分で、コードブロックを除いて計算します。
 - `draft: true` の記事は出力されません（`--drafts` と `serve` では出力）。
 - ファイル名がそのまま URL になるので、英数字とハイフンにしておくのがおすすめです。
 
@@ -169,8 +181,10 @@ frontmatter に `nav: 1` のように番号を書くと、ヘッダーのナビ�
 | 空行区切りのテキスト | `<p>`（日本語の行末は空白を入れずに連結） |
 | ```` ```lang ```` 〜 ```` ``` ```` | `<pre><code class="language-lang">`（対応言語はハイライト。4 つ以上のバッククォートで囲めば中に ```` ``` ```` を書ける） |
 | `` `code` `` / ``` `` a`b `` ``` | `<code>` |
-| `- item` / `* item` / `+ item` の連続行 | `<ul><li>` |
+| `- item` / `* item` / `+ item` の連続行 | `<ul><li>`（2 文字以上の字下げで入れ子。項目の中にコードブロックや段落も書ける） |
 | `1. item` / `1) item` の連続行 | `<ol><li>`（開始番号を引き継ぐ） |
+| `- [ ] todo` / `- [x] done` | チェックボックス付きのリスト |
+| `本文[^1]` + `[^1]: 注釈` | 脚注（参照順に番号を振り、記事の末尾にまとめて表示） |
 | `> text` | `<blockquote>`（中にリストなども書ける） |
 | `\| a \| b \|` + `\| --- \| :---: \|` | `<table>`（`:` で左・中央・右寄せ） |
 | `---` / `***` / `___` | `<hr>` |
@@ -182,7 +196,7 @@ frontmatter に `nav: 1` のように番号を書くと、ヘッダーのナビ�
 - `/images/a.png` のように `/` で始まる URL は、ページからの相対パスに変換されます。
   GitHub Pages のサブパス（`https://<user>.github.io/<repo>/`）で公開しても画像やリンクが切れません。
 - 見出しの `id` は見出しの文字から作られます（例: `posts/hello-world.html#できること`）。重複すると `-1`, `-2` が付きます。
-- 未対応: 入れ子のリスト、リスト項目の複数行、生の HTML（エスケープされて表示されます）。
+- 未対応: 生の HTML（エスケープされて表示されます）。
 
 ### シンタックスハイライト
 
@@ -231,8 +245,9 @@ CSS は `content/static/css/` にあり、`dist/css/` にコピーされます�
 | ファイル | 使えるトークン |
 | --- | --- |
 | `layout.html` | `{{page_title}}`（`<title>` 用）, `{{title}}`, `{{meta}}`（description・OGP・canonical・フィード）, `{{nav}}`（固定ページのナビゲーション）, `{{content}}` |
-| `post.html` | `{{title}}`, `{{date}}`, `{{description}}`, `{{tags}}`, `{{content}}` |
-| `page.html`（任意） | `{{title}}`, `{{description}}`, `{{content}}` |
+| `post.html` | `{{title}}`, `{{date}}`, `{{description}}`, `{{tags}}`, `{{toc}}`（目次。短い記事では空）, `{{reading_minutes}}`, `{{content}}` |
+| `page.html`（任意） | `{{title}}`, `{{description}}`, `{{toc}}`, `{{content}}` |
+| `archive.html`（任意） | `{{archive}}`（年ごとの記事一覧）, `{{post_count}}` |
 | `index.html` | `{{post_list}}`, `{{post_count}}` |
 | `tag.html`（任意） | `{{tag}}`, `{{post_list}}`, `{{post_count}}` |
 | `tags.html`（任意） | `{{tag_list}}`, `{{tag_count}}` |
@@ -265,20 +280,23 @@ GitHub の **Sync fork** か、`git fetch upstream && git merge upstream/main` �
 
 ```text
 src/
-  main.rs       CLI（build / check / serve）
+  main.rs       CLI（build / check / serve / new）
   site.rs       記事・固定ページ・タグの読み込みと HTML 生成
   parser.rs     Frontmatter と Markdown パーサー
   highlight.rs  ビルド時のシンタックスハイライト
   template.rs   {{placeholder}} 置換エンジン
   feed.rs       Atom フィードと sitemap
   images.rs     画像ファイルから縦横サイズを読む
+  assets.rs     CSS / JS の URL にハッシュを付ける（キャッシュ対策）
+  text.rs       抜粋と読了時間
+  scaffold.rs   bare new（記事の雛形）
   check.rs      リンク切れ・アンカー・alt の検査
   serve.rs      プレビュー用サーバーと自動リロード
 content/
   site.conf     サイト名・説明・著者・言語・公開 URL などの設定
   posts/        記事（*.md。0 本でもビルド可）
   pages/        固定ページ（*.md）
-  templates/    layout / post / index（必須）、page / tag / tags / 404（任意）
+  templates/    layout / post / index（必須）、page / tag / tags / archive / 404（任意）
   static/       dist/ にそのままコピーされるファイル
     css/style.css   既定のテーマ（@layer で整理）
     css/custom.css  自分用の上書きスタイル（本家は変更しない）

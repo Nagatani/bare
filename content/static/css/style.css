@@ -39,7 +39,7 @@
     /* Colors: each token carries its light and dark value. */
     --color-bg: light-dark(#fdfdfc, #161616);
     --color-fg: light-dark(#1f2328, #e7e5e4);
-    --color-muted: light-dark(#6b7280, #9ca3af);
+    --color-muted: light-dark(#646b78, #9ca3af);
     --color-accent: light-dark(#b4532a, #f08a5d);
     --color-rule: light-dark(#e7e5e4, #2e2e2e);
     --color-surface: light-dark(#f4f3f1, #222);
@@ -176,6 +176,11 @@
 
   li + li {
     margin-block-start: 0.6em;
+  }
+
+  /* Nested lists and paragraphs inside list items. */
+  li > :is(ul, ol, p, pre) {
+    margin-block: 0.6em 0;
   }
 
   code {
@@ -558,6 +563,110 @@
     color: var(--color-muted);
     font-size: 0.92rem;
     line-height: 1.7;
+  }
+
+  /* Table of contents ({{toc}}); hidden when the post is too short to have one. */
+  .toc-box {
+    margin-block-end: var(--space-6);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius);
+    font-size: var(--text-sm);
+
+    &:not(:has(.toc)) {
+      display: none;
+    }
+
+    & summary {
+      color: var(--color-muted);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    &[open] summary {
+      margin-block-end: var(--space-2);
+    }
+  }
+
+  /* No markers: headings often carry their own numbers ("1. Install"). */
+  .toc {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    & ol {
+      margin-block: 0.3em 0;
+      padding-inline-start: 1.25rem;
+      list-style: none;
+    }
+
+    & li + li {
+      margin-block-start: 0.3em;
+    }
+
+    & a {
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  /* Task list items: `- [x] done`. */
+  li.task {
+    list-style: none;
+    margin-inline-start: -1.25rem;
+
+    & input {
+      margin: 0 0.4em 0 0;
+      vertical-align: -0.1em;
+      accent-color: var(--color-accent);
+    }
+  }
+
+  .footnote-ref {
+    /* Keep the line height even around the superscript. */
+    line-height: 0;
+
+    & a {
+      text-decoration: none;
+
+      &::before {
+        content: "[";
+      }
+
+      &::after {
+        content: "]";
+      }
+    }
+  }
+
+  .footnotes {
+    margin-block-start: var(--space-6);
+    padding-block-start: var(--space-4);
+    border-block-start: 1px solid var(--color-rule);
+    color: var(--color-muted);
+    font-size: var(--text-sm);
+
+    & ol {
+      margin: 0;
+    }
+
+    & li:target {
+      color: var(--color-fg);
+    }
+  }
+
+  .archive-year {
+    margin-block-end: var(--space-6);
+
+    & h2 {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-2);
+      margin-block-end: var(--space-3);
+    }
   }
 
   .back {
