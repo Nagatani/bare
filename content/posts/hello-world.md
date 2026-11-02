@@ -67,9 +67,9 @@ Markdown で書けないものは HTML で書けます。行頭から `<details>
 [Nagatani/bare](https://github.com/Nagatani/bare) をフォークすれば、GitHub Pages ですぐに自分のブログを公開できます。
 手順は [bare をフォークして自分のブログを始める](start-your-blog.html) にまとめました。
 
-手元で試すだけなら、次の 2 行で十分です。
+手元で試すだけなら、次のコマンドでプレビューできます。表示された URL をブラウザで開いてください。
+原稿を保存すると自動で再ビルドされ、ブラウザも自動でリロードされます。
 
 ```sh
-cargo run
-open dist/index.html
+cargo run -- serve
 ```

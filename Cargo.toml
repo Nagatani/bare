@@ -2,7 +2,7 @@
 name = "bare"
 version = "0.1.0"
 edition = "2021"
-# The code builds on 1.70; Cargo.lock format v4 needs Cargo 1.78.
+# Minimum supported version, tested in CI (ci.yml). Cargo.lock format v4 needs Cargo 1.78.
 rust-version = "1.78"
 description = "A zero-dependency, minimalist static site generator written in pure Rust."
 license = "MIT"
