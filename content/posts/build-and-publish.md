@@ -28,6 +28,7 @@ dist/             生成されたサイト（git 管理外）
 | `bare check` | ビルドしたうえで、リンク切れ・存在しないアンカー・画像があれば終了コード 1 |
 | `bare serve` | プレビュー。保存すると再ビルドし、ブラウザも自動でリロード。下書きも表示 |
 | `bare new <名前>` | 記事の下書きを作成。`--page` で固定ページ、`--theme` で既定のテーマのコピー |
+| `bare update` | 本家の更新を、`site.conf` の `update_exclude` のパスを除いて取り込み、コミットの手前で止まる（[ブログのアップデート](start-your-blog.html#一部のディレクトリを除いて取り込む)） |
 
 手元では `cargo run -- serve` のように、`cargo run --` の後にコマンドを書きます。
 
@@ -70,6 +71,7 @@ cargo install --path .
 | `per_page` | 記事一覧の 1 ページあたりの件数 | （空。すべてを 1 ページに） |
 | `og_image` | `off` にすると、OGP 画像を自動で作らない | （空。作る） |
 | `theme` | 使うテーマ（`content/themes/` の下のディレクトリ名） | `default` |
+| `update_exclude` | `bare update` で本家の変更を取り込まないパス。リポジトリのルートからの相対パスを空白区切りで書く。サンプルの `site.conf` では `content/posts content/pages content/static` | （空。すべて取り込む） |
 | `archive_title` / `tags_title` / `not_found_title` | 年別アーカイブ・タグ一覧・404 ページの `<title>` に使う名前 | `Archive` / `Tags` / `404 Not Found` |
 
 ## プレビュー（bare serve）

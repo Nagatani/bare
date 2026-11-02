@@ -145,6 +145,56 @@ git merge upstream/main
 - `site.conf` が衝突したら、自分の版を残します
 - 本家が新しいサンプル記事を追加した場合も、不要なら削除してください
 
+### 一部のディレクトリを除いて取り込む
+
+本家のサンプル記事の追加・更新・削除を、自分のブログに持ち込みたくないこともあります。
+そのときは、`content/posts/` や `content/pages/` を除いて取り込みます。
+Sync fork ではできないので、手元で `bare update` を使います。
+
+除外するパスは、`content/site.conf` の `update_exclude` に、リポジトリのルートからの相対パスを空白区切りで書きます。
+はじめから記事・固定ページ・静的ファイルが指定されています。
+
+```
+update_exclude: content/posts content/pages content/static
+```
+
+本家のサンプル記事の更新も受け取りたいときは `content/posts` を消すなど、必要に応じて書き換えてコミットしてください。
+空にすると、すべて取り込みます。
+
+取り込むときは、次のようにします。
+
+```sh
+cargo run -- update
+git commit
+git push
+```
+
+`bare update` は本家の `main` を取り込み、`update_exclude` のパスをマージ前の自分の状態に戻して、コミットの手前で止まります。
+本家が追加したファイルは取り除かれ、本家が削除したファイルは残り、そこで起きた衝突も解消されます。
+表示された変更を確かめてから `git commit` してください。やめるときは `git merge --abort` で元に戻せます。
+
+- `upstream` という名前のリモートがあればそこから、なければ本家（`https://github.com/Nagatani/bare.git`）から取り込みます
+- コミットしていない変更があるときや、別のマージの途中では、何もせずに止まります
+- 除外したパスの外で衝突したときは、衝突したファイルを表示して終了コード 1 で止まります。直して `git add` してから `git commit` します
+
+除外されるのは、そのとき本家に入っていた変更です。
+その後に本家が `content/posts/` を変更すれば、次の取り込みでまた差分として出てくるので、毎回 `bare update` で取り込みます。
+
+`bare update` は、それが入った版の bare を一度取り込むまで使えません。
+まだ使えないときは、同じことを git で行います（`upstream` の登録は上と同じです）。
+
+```sh
+git fetch upstream
+git merge --no-commit --no-ff upstream/main
+git restore --source=HEAD --staged --worktree -- content/posts content/pages content/static
+git status
+git commit
+git push
+```
+
+`git restore` は、自分の側にないディレクトリ（例えば削除した `content/pages/`）を指定するとエラーになります。
+その場合は、そのディレクトリだけ `git rm -r -f -q -- content/pages` で取り除いてください。
+
 自分のテーマで差し替えたテンプレートには、本家の変更が届きません。
 本家の [CHANGELOG.md](https://github.com/Nagatani/bare/blob/main/CHANGELOG.md) の「テンプレートの変更」を見て、必要な差分だけを手で反映してください。
 反映しなくてもビルドは通ります（新しい機能が出力されないだけです）。

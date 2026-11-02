@@ -30,6 +30,7 @@ Rust のインストールは不要です。ビルドと公開は GitHub Actions
 cargo run -- serve              # プレビュー
 cargo run -- new my-post        # 記事の下書きを作る
 cargo run -- check              # リンク切れを検査する
+cargo run -- update             # 本家の更新を取り込む（コミットの手前で止まる）
 ```
 
 ## ドキュメント
@@ -45,4 +46,4 @@ cargo run -- check              # リンク切れを検査する
 ## ブログのアップデート
 
 GitHub の **Sync fork** で、本家の改善を取り込めます。
-衝突したときの対処は [ブログのアップデート](content/posts/start-your-blog.md#7-ブログのアップデート) を見てください。
+衝突したときの対処や、`content/posts/` などを除いて取り込む手順は [ブログのアップデート](content/posts/start-your-blog.md#7-ブログのアップデート) を見てください。

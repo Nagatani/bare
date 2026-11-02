@@ -32,6 +32,9 @@
 - `custom.css`・画像・favicon・`CNAME` は、これまでどおり `content/static/` に置きます。
 
 ### 追加
+- `bare update`: 本家の `main` を取り込み、`site.conf` の `update_exclude` に書いたパス（サンプルの `site.conf` では `content/posts content/pages content/static`）を
+  マージ前の状態に戻して、コミットの手前で止まる。`upstream` リモートがあればそこから取り込む。
+  コミットしていない変更があるときやマージの途中では何もしない。除外したパスの外で衝突したら、終了コード 1 で一覧を表示
 - OGP 画像の自動生成: テーマの `og.html`（タイトル・サイト名など）を Google Chrome（ヘッドレス）で撮った 1200×630 の画像を
   `og/` に作り、`og:image` に設定。記事・固定ページは frontmatter に `image` がないとき、トップ・年別アーカイブ・
   タグ一覧・タグ別ページは `site.conf` に `image` がないときに作る。公開 URL が分かるときだけ作り、

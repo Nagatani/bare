@@ -13,6 +13,7 @@ mod serve;
 mod site;
 mod template;
 mod text;
+mod update;
 
 use std::env;
 use std::path::PathBuf;
@@ -23,6 +24,7 @@ use check::Severity;
 use scaffold::NewOptions;
 use serve::ServeOptions;
 use site::Config;
+use update::Outcome;
 
 const USAGE: &str = "\
 bare — a zero-dependency static site generator
@@ -34,6 +36,9 @@ USAGE:
     bare new <NAME> [--title <TITLE>] [--page | --theme]
                              Create content/posts/NAME.md (a draft), pages/NAME.md,
                              or themes/NAME/ (a copy of the default theme)
+    bare update [OPTIONS]    Merge the upstream bare into this fork, except the
+                             paths in update_exclude (site.conf), and stop before
+                             the commit
 
 OPTIONS:
     -c, --content <DIR>   Source directory with posts/ and themes/     [default: content]
@@ -56,6 +61,7 @@ enum Command {
     Check(Config),
     Serve(Config, ServeOptions),
     New(Config, NewOptions),
+    Update(Config),
     Help,
     Version,
 }
@@ -89,6 +95,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
             "check" => mode = "check",
             "serve" => mode = "serve",
             "new" if mode == "build" => mode = "new",
+            "update" if mode == "build" => mode = "update",
             "--page" => new.page = true,
             "--theme" => new.theme = true,
             name if mode == "new" && new.slug.is_empty() && !name.starts_with('-') => {
@@ -126,6 +133,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
 
     Ok(match mode {
         "check" => Command::Check(config),
+        "update" => Command::Update(config),
         "new" if new.slug.is_empty() => return Err("missing NAME for `new`".to_string()),
         "new" if new.page && new.theme => {
             return Err("`--page` and `--theme` cannot be used together".to_string())
@@ -189,6 +197,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         },
+        Command::Update(config) => return update(&config),
         Command::Serve(config, options) => {
             if let Err(err) = serve::serve(config, options, |config| build(config, false).is_some())
             {
@@ -198,6 +207,49 @@ fn main() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// Runs `bare update` and explains what to do next.
+fn update(config: &Config) -> ExitCode {
+    match update::update(&config.content_dir) {
+        Ok(Outcome::UpToDate { source }) => {
+            println!("bare update: already up to date with {source}");
+            ExitCode::SUCCESS
+        }
+        Ok(Outcome::Merged {
+            source,
+            changes,
+            conflicts,
+            excluded,
+        }) => {
+            println!("bare update: merged {source} (not committed yet)");
+            if !excluded.is_empty() {
+                println!("  kept as before (update_exclude): {}", excluded.join(" "));
+            }
+            if changes.is_empty() {
+                println!("  no changes outside the excluded paths");
+            }
+            for line in &changes {
+                println!("  {line}");
+            }
+            println!("  to cancel the update: git merge --abort");
+            if !conflicts.is_empty() {
+                eprintln!("bare update: {} file(s) have conflicts:", conflicts.len());
+                for path in &conflicts {
+                    eprintln!("  {path}");
+                }
+                eprintln!("  fix them, `git add` each file, then `git commit`");
+                return ExitCode::FAILURE;
+            }
+            println!("  review the changes, then `git commit` and `git push`");
+            println!("  using your own theme? see CHANGELOG.md for template changes");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Builds the site, checks its links and prints a report. Returns the number of
