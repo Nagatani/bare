@@ -24,7 +24,7 @@ Markdown を書いて `cargo run` するだけで、`dist/` に HTML が出力�
 
 - 技術ブログに必要な Markdown を HTML に変換し、コードはビルド時に色付けする（[記事の書き方](writing-guide.html)）
 - `bare check` で、内部リンク・`#見出し` へのリンク・画像の切れを検査する
-- タグ別ページ・年別アーカイブ・ページ送り・目次・Atom フィード・サイトマップを自動で作る
+- タグ別ページ・年別アーカイブ・ページ送り・目次・フィード・サイトマップを自動で作る
 - テーマとテンプレートで見た目を変える（[デザインを変える](customize-design.html)）
 
 ## 表示の見本
@@ -71,7 +71,7 @@ Markdown で書けないものは HTML で書けます。行頭から `<details>
 > GitHub Pages のサブパス（`/bare/` など）で公開しても、自動で正しい相対パスに変換されます。
 
 コードブロックは、ビルド時に色が付きます。たとえば bare は正規表現を使わず、
-`split_once` のような文字列スライスの操作だけで Frontmatter を読んでいます。
+`split_once` のような文字列スライスの操作だけで frontmatter を読んでいます。
 
 ```rust
 use std::collections::HashMap;

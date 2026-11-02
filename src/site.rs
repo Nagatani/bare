@@ -1117,11 +1117,11 @@ fn tag_file(tag: &str) -> String {
 }
 
 // Arguments accepted by the placeholders that produce markup. Leaving them out
-// gives the default output; see "テンプレートの引数" in README.md.
+// gives the default output; see "トークンの引数" in content/posts/customize-design.md.
 //
 // The defaults in the render functions below must produce exactly the markup
 // that was output before arguments existed, so forks that never use arguments
-// see no change. Keep README.md in sync when adding an argument.
+// see no change. Keep that post in sync when adding an argument.
 const NAV_ARGS: Spec = &[("class", Kind::Text), ("label", Kind::Text)];
 const TAGS_ARGS: Spec = &[
     ("class", Kind::Text),
