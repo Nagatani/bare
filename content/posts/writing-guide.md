@@ -8,7 +8,7 @@ description: frontmatter の項目、固定ページ、使える Markdown と HT
 記事は `content/posts/` に置く Markdown ファイルです。ファイル名がそのまま URL になります
 （`hello-world.md` → `posts/hello-world.html`）。英数字とハイフンにしておくのがおすすめです。
 
-`bare new my-post --title "記事のタイトル"` で、今日の日付と `draft: true` 入りのファイルを作れます。
+`cargo run -- new my-post --title "記事のタイトル"` で、今日の日付と `draft: true` 入りのファイルを作れます。
 
 ## frontmatter
 
@@ -43,7 +43,7 @@ draft: true
 使える項目は `title`・`description`・`image`・`nav`・`draft` です。
 `nav: 1` のように番号を書くと、ヘッダーのナビゲーションに番号順で並びます。
 
-`bare new about --page` で雛形を作れます。
+`cargo run -- new about --page` で雛形を作れます。
 
 ## Markdown
 
