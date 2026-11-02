@@ -12,7 +12,7 @@ use crate::css;
 use crate::feed;
 use crate::images;
 use crate::parser::{self, escape_html};
-use crate::template::{Context, Template};
+use crate::template::{Args, Context, Kind, Spec, Template};
 use crate::text;
 
 /// Where to read sources from and where to write the generated site.
@@ -38,8 +38,8 @@ pub(crate) struct Post {
     pub image: Option<String>,
     pub tags: Vec<String>,
     pub html: String,
-    /// Table of contents (`{{toc}}`); empty for short posts.
-    toc: String,
+    /// Headings for the table of contents (`{{toc}}`).
+    headings: Vec<parser::Heading>,
     /// Start of the first paragraph, used when there is no description.
     excerpt: String,
     reading_minutes: usize,
@@ -71,7 +71,7 @@ struct Page {
     /// Position in the header navigation; pages without it are not listed.
     nav: Option<i64>,
     html: String,
-    toc: String,
+    headings: Vec<parser::Heading>,
 }
 
 impl Page {
@@ -134,7 +134,7 @@ impl SiteMeta {
     }
 
     /// The `{{site_*}}` values shared by every template.
-    fn context(&self) -> Context {
+    fn context(&self) -> Context<'static> {
         Context::new()
             .with("site_title", escape_html(&self.title))
             .with("site_description", escape_html(&self.description))
@@ -339,7 +339,7 @@ impl Templates {
 /// template uses that the build does not provide (usually typos).
 struct Renderer<'a> {
     site: &'a SiteMeta,
-    base: Context,
+    base: Context<'static>,
     /// Header navigation entries: (path relative to the root, title).
     nav: Vec<(String, String)>,
     unknown: Vec<String>,
@@ -347,13 +347,13 @@ struct Renderer<'a> {
 
 impl Renderer<'_> {
     /// Shared values plus `{{root}}`, the relative path from the page to the site root.
-    fn context(&self, root: &str) -> Context {
+    fn context(&self, root: &str) -> Context<'static> {
         self.base.clone().with("root", root)
     }
 
-    fn render(&mut self, name: &str, template: &Template, context: &Context) -> String {
-        for token in template.unknown_tokens(context) {
-            let warning = format!("templates/{name}: unknown placeholder {{{{{token}}}}}");
+    fn render(&mut self, name: &str, template: &Template, context: &Context<'_>) -> String {
+        for problem in template.problems(context) {
+            let warning = format!("templates/{name}: {problem}");
             if !self.unknown.contains(&warning) {
                 self.unknown.push(warning);
             }
@@ -370,37 +370,17 @@ impl Renderer<'_> {
         current: Option<&str>,
         body: String,
     ) -> String {
+        let nav = self.nav.clone();
         let context = self
             .context(meta.root)
             .with("title", escape_html(meta.title))
             .with("page_title", escape_html(page_title))
             .with("meta", self.site.meta_tags(meta))
-            .with("nav", self.nav_html(meta.root, current))
+            .with_markup("nav", NAV_ARGS, move |args| {
+                render_nav(&nav, meta.root, current, args)
+            })
             .with("content", body);
         self.render("layout.html", layout, &context)
-    }
-
-    fn nav_html(&self, root: &str, current: Option<&str>) -> String {
-        if self.nav.is_empty() {
-            return String::new();
-        }
-        let links: Vec<String> = self
-            .nav
-            .iter()
-            .map(|(path, title)| {
-                let aria = if current == Some(path.as_str()) {
-                    " aria-current=\"page\""
-                } else {
-                    ""
-                };
-                format!(
-                    "<a href=\"{root}{}\"{aria}>{}</a>",
-                    escape_html(path),
-                    escape_html(title)
-                )
-            })
-            .collect();
-        format!("<nav class=\"site-nav\" aria-label=\"サイト\">{}</nav>", links.join(""))
     }
 }
 
@@ -487,8 +467,12 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 "description",
                 escape_html(post.description.as_deref().unwrap_or("")),
             )
-            .with("tags", render_tags(&post.tags, link_tags.then_some(root)))
-            .with("toc", post.toc.clone())
+            .with_markup("tags", TAGS_ARGS, move |args| {
+                render_tags(&post.tags, link_tags.then_some(root), args)
+            })
+            .with_markup("toc", TOC_ARGS, |args| {
+                parser::render_toc(&post.headings, args.text("class", "toc"))
+            })
             .with("reading_minutes", post.reading_minutes.to_string())
             .with(
                 "content",
@@ -523,8 +507,10 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             .context(root)
             .with("title", escape_html(&page.title))
             .with("date", "")
-            .with("tags", "")
-            .with("toc", page.toc.clone())
+            .with_markup("tags", TAGS_ARGS, |_| String::new())
+            .with_markup("toc", TOC_ARGS, |args| {
+                parser::render_toc(&page.headings, args.text("class", "toc"))
+            })
             .with(
                 "description",
                 escape_html(page.description.as_deref().unwrap_or("")),
@@ -574,9 +560,13 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         };
         let context = r
             .context(root)
-            .with("post_list", render_post_list(chunk, root, link_tags))
+            .with_markup("post_list", POST_LIST_ARGS, |args| {
+                render_post_list(chunk, root, link_tags, args)
+            })
             .with("post_count", posts.len().to_string())
-            .with("pagination", render_pagination(number, page_count, root))
+            .with_markup("pagination", PAGINATION_ARGS, |args| {
+                render_pagination(number, page_count, root, args)
+            })
             .with("page_number", number.to_string())
             .with("page_count", page_count.to_string());
         let body = r.render("index.html", &templates.index, &context);
@@ -610,7 +600,9 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     if let Some(archive) = &templates.archive {
         let context = r
             .context("")
-            .with("archive", render_archive(&posts, link_tags))
+            .with_markup("archive", ARCHIVE_ARGS, |args| {
+                render_archive(&posts, link_tags, args)
+            })
             .with("post_count", posts.len().to_string());
         let body = r.render("archive.html", archive, &context);
         let meta = PageMeta {
@@ -640,7 +632,9 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             let context = r
                 .context(root)
                 .with("tag", escape_html(&group.name))
-                .with("post_list", render_post_list(&group.posts, root, true))
+                .with_markup("post_list", POST_LIST_ARGS, |args| {
+                    render_post_list(&group.posts, root, true, args)
+                })
                 .with("post_count", group.posts.len().to_string());
             let body = r.render("tag.html", tag_template, &context);
             let title = format!("#{}", group.name);
@@ -661,7 +655,9 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         if let Some(tags_template) = &templates.tags {
             let context = r
                 .context(root)
-                .with("tag_list", render_tag_list(&groups, root))
+                .with_markup("tag_list", TAG_LIST_ARGS, |args| {
+                    render_tag_list(&groups, root, args)
+                })
                 .with("tag_count", groups.len().to_string());
             let body = r.render("tags.html", tags_template, &context);
             let meta = PageMeta {
@@ -851,7 +847,7 @@ fn load_posts(
                 description: optional(meta, "description"),
                 image: optional(meta, "image"),
                 tags: meta.tags(),
-                toc: parser::render_toc(&rendered.headings),
+                headings: rendered.headings,
                 excerpt: text::excerpt(&rendered.html),
                 reading_minutes: text::reading_minutes(&rendered.html),
                 html: rendered.html,
@@ -885,7 +881,7 @@ fn load_pages(
             description: optional(meta, "description"),
             image: optional(meta, "image"),
             nav: meta.get("nav").and_then(|v| v.trim().parse().ok()),
-            toc: parser::render_toc(&rendered.headings),
+            headings: rendered.headings,
             html: rendered.html,
             slug,
         });
@@ -970,42 +966,144 @@ fn tag_file(tag: &str) -> String {
         .collect()
 }
 
+// Arguments accepted by the placeholders that produce markup. Leaving them out
+// gives the default output; see "テンプレートの引数" in README.md.
+const NAV_ARGS: Spec = &[("class", Kind::Text), ("label", Kind::Text)];
+const TAGS_ARGS: Spec = &[
+    ("class", Kind::Text),
+    ("item_class", Kind::Text),
+    ("label", Kind::Text),
+    ("prefix", Kind::Text),
+];
+const TOC_ARGS: Spec = &[("class", Kind::Text)];
+const POST_LIST_ARGS: Spec = &[
+    ("item_class", Kind::Text),
+    ("desc", Kind::Bool),
+    ("tags", Kind::Bool),
+];
+const PAGINATION_ARGS: Spec = &[
+    ("class", Kind::Text),
+    ("current_class", Kind::Text),
+    ("prev", Kind::Text),
+    ("next", Kind::Text),
+    ("prev_label", Kind::Text),
+    ("next_label", Kind::Text),
+    ("gap", Kind::Text),
+];
+const ARCHIVE_ARGS: Spec = &[
+    ("class", Kind::Text),
+    ("heading", Kind::Heading),
+    ("count_prefix", Kind::Text),
+    ("count_suffix", Kind::Text),
+];
+const TAG_LIST_ARGS: Spec = &[
+    ("link_class", Kind::Text),
+    ("count_prefix", Kind::Text),
+    ("count_suffix", Kind::Text),
+];
+
+/// ` name="value"`, or nothing when `value` is empty.
+fn attr(name: &str, value: &str) -> String {
+    match value {
+        "" => String::new(),
+        value => format!(" {name}=\"{value}\""),
+    }
+}
+
+/// Text read by screen readers only.
+fn hidden(text: &str) -> String {
+    match text {
+        "" => String::new(),
+        text => format!("<span class=\"visually-hidden\">{text}</span>"),
+    }
+}
+
+/// A post count, read as e.g. "2026、3件" next to the year or tag before it.
+fn render_count(count: usize, args: &Args) -> String {
+    format!(
+        "<span class=\"tag-count\">{}{count}{}</span>",
+        hidden(args.text("count_prefix", "、")),
+        hidden(args.text("count_suffix", "件"))
+    )
+}
+
+/// Renders `{{nav}}`: links to the pages with `nav` in their frontmatter.
+fn render_nav(nav: &[(String, String)], root: &str, current: Option<&str>, args: &Args) -> String {
+    if nav.is_empty() {
+        return String::new();
+    }
+    let links: String = nav
+        .iter()
+        .map(|(path, title)| {
+            let aria = if current == Some(path.as_str()) {
+                " aria-current=\"page\""
+            } else {
+                ""
+            };
+            format!(
+                "<a href=\"{root}{}\"{aria}>{}</a>",
+                escape_html(path),
+                escape_html(title)
+            )
+        })
+        .collect();
+    format!(
+        "<nav{}{}>{links}</nav>",
+        attr("class", args.text("class", "site-nav")),
+        attr("aria-label", args.text("label", "サイト"))
+    )
+}
+
 /// Renders tags, as links to their tag pages when `root` is given.
-fn render_tags(tags: &[String], root: Option<&str>) -> String {
+fn render_tags(tags: &[String], root: Option<&str>, args: &Args) -> String {
     if tags.is_empty() {
         return String::new();
     }
-    let items: Vec<String> = tags
+    let item_class = attr("class", args.text("item_class", "tag"));
+    let prefix = args.text("prefix", "");
+    let items: String = tags
         .iter()
         .map(|tag| match root {
             Some(root) => format!(
-                "<li class=\"tag\"><a href=\"{root}tags/{}.html\">{}</a></li>",
+                "<li{item_class}><a href=\"{root}tags/{}.html\">{prefix}{}</a></li>",
                 escape_html(&encode_path(&tag_file(tag))),
                 escape_html(tag)
             ),
-            None => format!("<li class=\"tag\">{}</li>", escape_html(tag)),
+            None => format!("<li{item_class}>{prefix}{}</li>", escape_html(tag)),
         })
         .collect();
-    format!("<ul class=\"tags\" aria-label=\"タグ\">{}</ul>", items.join(""))
+    format!(
+        "<ul{}{}>{items}</ul>",
+        attr("class", args.text("class", "tags")),
+        attr("aria-label", args.text("label", "タグ"))
+    )
 }
 
 /// Renders `<li>` items for a post list on a page `root` away from the site root.
-fn render_post_list(posts: &[&Post], root: &str, link_tags: bool) -> String {
+fn render_post_list(posts: &[&Post], root: &str, link_tags: bool, args: &Args) -> String {
+    let item_class = attr("class", args.text("item_class", "post-item"));
+    let show_desc = args.flag("desc", true);
+    let show_tags = args.flag("tags", true);
     let mut out = String::new();
     for post in posts {
         let description = match post.summary() {
-            "" => String::new(),
-            summary => format!("<p class=\"post-desc\">{}</p>", escape_html(summary)),
+            summary if show_desc && !summary.is_empty() => {
+                format!("<p class=\"post-desc\">{}</p>", escape_html(summary))
+            }
+            _ => String::new(),
+        };
+        let tags = match show_tags {
+            true => render_tags(&post.tags, link_tags.then_some(root), &Args::default()),
+            false => String::new(),
         };
         out.push_str(&format!(
-            "<li class=\"post-item\">\
+            "<li{item_class}>\
              <time datetime=\"{date}\">{date}</time>\
              <a href=\"{root}{href}\">{title}</a>\
              {description}{tags}</li>\n",
             date = escape_html(&post.date),
             href = escape_html(&post.path()),
             title = escape_html(&post.title),
-            tags = render_tags(&post.tags, link_tags.then_some(root)),
         ));
     }
     out
@@ -1013,7 +1111,7 @@ fn render_post_list(posts: &[&Post], root: &str, link_tags: bool) -> String {
 
 /// Renders `{{pagination}}`: previous/next links and page numbers, with
 /// ellipses for long ranges. Empty when everything fits on one page.
-fn render_pagination(current: usize, count: usize, root: &str) -> String {
+fn render_pagination(current: usize, count: usize, root: &str, args: &Args) -> String {
     if count <= 1 {
         return String::new();
     }
@@ -1024,10 +1122,14 @@ fn render_pagination(current: usize, count: usize, root: &str) -> String {
     let mut items = Vec::new();
     if current > 1 {
         items.push(format!(
-            "<li><a rel=\"prev\" aria-label=\"前のページ\" href=\"{}\">←</a></li>",
-            href(current - 1)
+            "<li><a rel=\"prev\"{} href=\"{}\">{}</a></li>",
+            attr("aria-label", args.text("prev_label", "前のページ")),
+            href(current - 1),
+            args.text("prev", "←")
         ));
     }
+    let gap = format!("<li class=\"gap\">{}</li>", args.text("gap", "…"));
+    let current_class = attr("class", args.text("current_class", ""));
     let mut last_shown = 0;
     for n in 1..=count {
         // First, last, and the pages next to the current one.
@@ -1035,10 +1137,10 @@ fn render_pagination(current: usize, count: usize, root: &str) -> String {
             continue;
         }
         if n > last_shown + 1 {
-            items.push("<li class=\"gap\">…</li>".to_string());
+            items.push(gap.clone());
         }
         items.push(if n == current {
-            format!("<li><span aria-current=\"page\">{n}</span></li>")
+            format!("<li><span{current_class} aria-current=\"page\">{n}</span></li>")
         } else {
             format!("<li><a href=\"{}\">{n}</a></li>", href(n))
         });
@@ -1046,15 +1148,23 @@ fn render_pagination(current: usize, count: usize, root: &str) -> String {
     }
     if current < count {
         items.push(format!(
-            "<li><a rel=\"next\" aria-label=\"次のページ\" href=\"{}\">→</a></li>",
-            href(current + 1)
+            "<li><a rel=\"next\"{} href=\"{}\">{}</a></li>",
+            attr("aria-label", args.text("next_label", "次のページ")),
+            href(current + 1),
+            args.text("next", "→")
         ));
     }
-    format!("<ol class=\"pagination\">{}</ol>", items.join(""))
+    format!(
+        "<ol{}>{}</ol>",
+        attr("class", args.text("class", "pagination")),
+        items.join("")
+    )
 }
 
 /// Renders posts grouped by year, newest first, for `{{archive}}`.
-fn render_archive(posts: &[Post], link_tags: bool) -> String {
+fn render_archive(posts: &[Post], link_tags: bool, args: &Args) -> String {
+    let class = attr("class", args.text("class", "archive-year"));
+    let heading = args.text("heading", "h2");
     let mut out = String::new();
     let mut start = 0;
     while start < posts.len() {
@@ -1064,14 +1174,12 @@ fn render_archive(posts: &[Post], link_tags: bool) -> String {
             .position(|post| post.year() != year)
             .map_or(posts.len(), |n| start + n);
         let group: Vec<&Post> = posts[start..end].iter().collect();
-        let label = if year.is_empty() { "----" } else { year };
+        let label = escape_html(if year.is_empty() { "----" } else { year });
         out.push_str(&format!(
-            "<section class=\"archive-year\">\n<h2 id=\"y{id}\">{label}<span class=\"tag-count\"><span class=\"visually-hidden\">、</span>{count}<span class=\"visually-hidden\">件</span></span></h2>\n\
+            "<section{class}>\n<{heading} id=\"y{label}\">{label}{count}</{heading}>\n\
              <ul class=\"post-list\">\n{list}</ul>\n</section>\n",
-            id = escape_html(label),
-            label = escape_html(label),
-            count = group.len(),
-            list = render_post_list(&group, "", link_tags),
+            count = render_count(group.len(), args),
+            list = render_post_list(&group, "", link_tags, &Args::default()),
         ));
         start = end;
     }
@@ -1079,16 +1187,17 @@ fn render_archive(posts: &[Post], link_tags: bool) -> String {
 }
 
 /// Renders `<li>` items for the tag index, most used tags first.
-fn render_tag_list(groups: &[TagGroup], root: &str) -> String {
+fn render_tag_list(groups: &[TagGroup], root: &str, args: &Args) -> String {
+    let link_class = attr("class", args.text("link_class", "tag"));
     let mut sorted: Vec<&TagGroup> = groups.iter().collect();
     sorted.sort_by_key(|group| std::cmp::Reverse(group.posts.len()));
     let mut out = String::new();
     for group in sorted {
         out.push_str(&format!(
-            "<li><a class=\"tag\" href=\"{root}{}\">{}</a><span class=\"tag-count\"><span class=\"visually-hidden\">、</span>{}<span class=\"visually-hidden\">件</span></span></li>\n",
+            "<li><a{link_class} href=\"{root}{}\">{}</a>{}</li>\n",
             escape_html(&group.path()),
             escape_html(&group.name),
-            group.posts.len()
+            render_count(group.posts.len(), args)
         ));
     }
     out
@@ -1172,14 +1281,14 @@ mod tests {
 
     #[test]
     fn renders_pagination() {
-        assert_eq!(render_pagination(1, 1, ""), "");
+        assert_eq!(render_pagination(1, 1, "", &Args::default()), "");
         assert_eq!(
-            render_pagination(1, 2, ""),
+            render_pagination(1, 2, "", &Args::default()),
             "<ol class=\"pagination\"><li><span aria-current=\"page\">1</span></li>\
              <li><a href=\"page/2.html\">2</a></li>\
              <li><a rel=\"next\" aria-label=\"次のページ\" href=\"page/2.html\">→</a></li></ol>"
         );
-        let middle = render_pagination(5, 9, "../");
+        let middle = render_pagination(5, 9, "../", &Args::default());
         assert!(middle.starts_with("<ol class=\"pagination\"><li><a rel=\"prev\" aria-label=\"前のページ\" href=\"../page/4.html\">←</a></li>\
              <li><a href=\"../index.html\">1</a></li><li class=\"gap\">…</li>\
              <li><a href=\"../page/4.html\">4</a></li><li><span aria-current=\"page\">5</span></li>"));

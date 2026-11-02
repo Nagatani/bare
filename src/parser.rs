@@ -651,7 +651,7 @@ fn replace_footnote_refs(html: &str, mut link: impl FnMut(&str) -> Option<String
 
 /// Renders a nested `<ol>` table of contents from the two highest heading levels
 /// present. Returns an empty string for fewer than two entries.
-pub fn render_toc(headings: &[Heading]) -> String {
+pub fn render_toc(headings: &[Heading], class: &str) -> String {
     let Some(top) = headings.iter().map(|h| h.level).min() else {
         return String::new();
     };
@@ -659,7 +659,10 @@ pub fn render_toc(headings: &[Heading]) -> String {
     if entries.len() < 2 {
         return String::new();
     }
-    let mut out = String::from("<ol class=\"toc\">\n");
+    let mut out = match class {
+        "" => String::from("<ol>\n"),
+        class => format!("<ol class=\"{class}\">\n"),
+    };
     let mut sub_open = false;
     let mut item_open = false;
     for heading in entries {
@@ -1509,11 +1512,14 @@ mod tests {
         assert_eq!(doc.headings.len(), 5);
         let doc = render_markdown("## One\n### Sub [link](x)\n## Two `code`\n#### deep", "");
         assert_eq!(
-            render_toc(&doc.headings),
+            render_toc(&doc.headings, "toc"),
             "<ol class=\"toc\">\n<li><a href=\"#one\">One</a>\n<ol>\n<li><a href=\"#sub-link\">Sub link</a></li>\n</ol>\n</li>\n\
              <li><a href=\"#two-code\">Two <code>code</code></a></li>\n</ol>"
         );
-        assert_eq!(render_toc(&render_markdown("## Only", "").headings), "");
+        assert_eq!(
+            render_toc(&render_markdown("## Only", "").headings, "toc"),
+            ""
+        );
     }
 
     #[test]

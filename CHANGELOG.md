@@ -8,6 +8,9 @@
 ## Unreleased
 
 ### 追加
+- テンプレートの引数: `{{pagination class="my-pager" prev="Newer"}}` のように、`{{nav}}`・`{{tags}}`・`{{toc}}`・
+  `{{post_list}}`・`{{pagination}}`・`{{archive}}`・`{{tag_list}}` の class 名や文言をテンプレートから変更
+  （引数なしの出力は従来どおり。知らない引数や不正な値はビルド時に警告。詳細は README の「テンプレートの引数」）
 - 記事一覧のページ分割: `site.conf` の `per_page` 件ごとに `index.html`, `page/2.html`, ... に分け、`{{pagination}}` でページ送りを表示
   （`per_page` が空なら従来どおり 1 ページ。`{{pagination}}` のない `index.html` で `per_page` を設定するとビルド時に警告）
 - CSS の `@import` をビルド時に展開: `style.css` から `@import "_x.css";` で読み込んだファイルを 1 つにまとめて出力。

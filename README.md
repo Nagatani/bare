@@ -291,6 +291,35 @@ CSS は `content/static/css/` にあります。テーマは役割ごとのフ�
 テンプレートに未定義のトークンがあるとビルド時に警告します（出力にはそのまま残ります）。
 本文中に書かれた `{{...}}` は置換されません。
 
+### テンプレートの引数
+
+HTML をまとめて出力するトークンは、`{{名前 キー="値"}}` の形で class 名や文言を変えられます。
+引数を省略すると既定値になります。
+
+```html
+<nav class="pager" aria-label="Pagination">
+  {{pagination class="pagination my-pager" prev="Newer" next="Older" prev_label="Newer posts" next_label="Older posts"}}
+</nav>
+```
+
+| トークン | 引数（既定値） |
+| --- | --- |
+| `{{nav}}` | `class`（`site-nav`）, `label`（`サイト`。aria-label） |
+| `{{tags}}` | `class`（`tags`）, `item_class`（`tag`）, `label`（`タグ`。aria-label）, `prefix`（空。タグ名の前に付ける文字。例: `#`） |
+| `{{toc}}` | `class`（`toc`） |
+| `{{post_list}}` | `item_class`（`post-item`）, `desc`（`true`。説明文を表示）, `tags`（`true`。タグを表示） |
+| `{{pagination}}` | `class`（`pagination`）, `current_class`（空。現在のページ番号の class）, `prev`（`←`）, `next`（`→`）, `prev_label`（`前のページ`）, `next_label`（`次のページ`）, `gap`（`…`） |
+| `{{archive}}` | `class`（`archive-year`。年ごとの `<section>`）, `heading`（`h2`。年の見出しの要素。`h1`〜`h6`）, `count_prefix`（`、`）, `count_suffix`（`件`） |
+| `{{tag_list}}` | `link_class`（`tag`）, `count_prefix`（`、`）, `count_suffix`（`件`） |
+
+- `count_prefix` と `count_suffix` は件数の前後に付く読み上げ専用の文字で、画面には表示されません
+  （既定では「2026、3件」と読まれます。英語なら `count_prefix=", " count_suffix=" posts"` など）。
+- class を `""` にすると class 属性を出力しません。`desc`・`tags` は `"true"` か `"false"` です。
+- 値はテンプレートの一部としてそのまま出力されるため、`prev="<svg>…</svg>"` のように HTML も書けます。
+  値の中に `"` は書けません。
+- 知らない引数名、`"` で囲んでいない値、範囲外の値（`heading="h7"` など）はビルド時に警告し、既定の出力になります。
+  引数を受け付けないトークン（`{{title}}` など）に引数を書いた場合も警告します。
+
 ## 本家の更新を取り込む（フォークした人向け）
 
 GitHub の **Sync fork** か、`git fetch upstream && git merge upstream/main` で取り込みます。
