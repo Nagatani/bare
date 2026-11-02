@@ -53,6 +53,8 @@
   Markdown の `---`（`<hr>`）は線ではなく 3 つの点で表示。表・目次・コード・タグ・ページ送りの枠はそのまま
 - 本文が短いページでもフッターが画面の下端に来るように変更: `body` を高さ `100svh` 以上のグリッドにし、
   `<main>` が残りの高さを埋める（CSS のみ。テンプレートの変更は不要）
+- 読み上げ向けのラベルを追加: `{{nav}}` に `aria-label="サイト"`、記事のタグ一覧に `aria-label="タグ"`、
+  ページ送りの ←/→ に「前のページ」「次のページ」。年別アーカイブとタグ一覧の件数は「2026、3件」のように読み上げる
 - 変数を追加: `--color-link`・`--color-link-visited`・`--color-link-hover`・`--color-mark`・`--code-bg`・`--code-border`・`--text-code`。
   `--color-accent` は残しています（既定値は `--color-link` と同じ）。レイヤー `overrides` は使われていなかったため削除し、`prose` を追加
 - 段落内の `<b>` や `<kbd>` などの HTML タグは、エスケープせずに HTML として出力するようになりました。
@@ -79,6 +81,9 @@
   - `<h1>` の直後に `<p class="lead">{{description}}</p>` を追加
   - `<div class="post-body">` → `<div class="post-body prose">`
 - `404.html`: 新規（任意）
+- `post.html` / `archive.html` / `tag.html` / `tags.html` / `404.html`: 戻るリンクの矢印を
+  `<span aria-hidden="true">←</span>` に変更（読み上げで「矢印」と読まれないように）
+- `tag.html`: `<span class="tag-hash">#</span>` に `aria-hidden="true"` を追加
 
 ### ワークフロー
 - `configure-pages` をビルドの前に移動し、その出力 `base_url` を `--base-url` で渡すように変更

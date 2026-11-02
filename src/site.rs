@@ -400,7 +400,7 @@ impl Renderer<'_> {
                 )
             })
             .collect();
-        format!("<nav class=\"site-nav\">{}</nav>", links.join(""))
+        format!("<nav class=\"site-nav\" aria-label=\"サイト\">{}</nav>", links.join(""))
     }
 }
 
@@ -986,7 +986,7 @@ fn render_tags(tags: &[String], root: Option<&str>) -> String {
             None => format!("<li class=\"tag\">{}</li>", escape_html(tag)),
         })
         .collect();
-    format!("<ul class=\"tags\">{}</ul>", items.join(""))
+    format!("<ul class=\"tags\" aria-label=\"タグ\">{}</ul>", items.join(""))
 }
 
 /// Renders `<li>` items for a post list on a page `root` away from the site root.
@@ -1024,7 +1024,7 @@ fn render_pagination(current: usize, count: usize, root: &str) -> String {
     let mut items = Vec::new();
     if current > 1 {
         items.push(format!(
-            "<li><a rel=\"prev\" href=\"{}\">←</a></li>",
+            "<li><a rel=\"prev\" aria-label=\"前のページ\" href=\"{}\">←</a></li>",
             href(current - 1)
         ));
     }
@@ -1046,7 +1046,7 @@ fn render_pagination(current: usize, count: usize, root: &str) -> String {
     }
     if current < count {
         items.push(format!(
-            "<li><a rel=\"next\" href=\"{}\">→</a></li>",
+            "<li><a rel=\"next\" aria-label=\"次のページ\" href=\"{}\">→</a></li>",
             href(current + 1)
         ));
     }
@@ -1066,7 +1066,7 @@ fn render_archive(posts: &[Post], link_tags: bool) -> String {
         let group: Vec<&Post> = posts[start..end].iter().collect();
         let label = if year.is_empty() { "----" } else { year };
         out.push_str(&format!(
-            "<section class=\"archive-year\">\n<h2 id=\"y{id}\">{label}<span class=\"tag-count\">{count}</span></h2>\n\
+            "<section class=\"archive-year\">\n<h2 id=\"y{id}\">{label}<span class=\"tag-count\"><span class=\"visually-hidden\">、</span>{count}<span class=\"visually-hidden\">件</span></span></h2>\n\
              <ul class=\"post-list\">\n{list}</ul>\n</section>\n",
             id = escape_html(label),
             label = escape_html(label),
@@ -1085,7 +1085,7 @@ fn render_tag_list(groups: &[TagGroup], root: &str) -> String {
     let mut out = String::new();
     for group in sorted {
         out.push_str(&format!(
-            "<li><a class=\"tag\" href=\"{root}{}\">{}</a><span class=\"tag-count\">{}</span></li>\n",
+            "<li><a class=\"tag\" href=\"{root}{}\">{}</a><span class=\"tag-count\"><span class=\"visually-hidden\">、</span>{}<span class=\"visually-hidden\">件</span></span></li>\n",
             escape_html(&group.path()),
             escape_html(&group.name),
             group.posts.len()
@@ -1177,15 +1177,15 @@ mod tests {
             render_pagination(1, 2, ""),
             "<ol class=\"pagination\"><li><span aria-current=\"page\">1</span></li>\
              <li><a href=\"page/2.html\">2</a></li>\
-             <li><a rel=\"next\" href=\"page/2.html\">→</a></li></ol>"
+             <li><a rel=\"next\" aria-label=\"次のページ\" href=\"page/2.html\">→</a></li></ol>"
         );
         let middle = render_pagination(5, 9, "../");
-        assert!(middle.starts_with("<ol class=\"pagination\"><li><a rel=\"prev\" href=\"../page/4.html\">←</a></li>\
+        assert!(middle.starts_with("<ol class=\"pagination\"><li><a rel=\"prev\" aria-label=\"前のページ\" href=\"../page/4.html\">←</a></li>\
              <li><a href=\"../index.html\">1</a></li><li class=\"gap\">…</li>\
              <li><a href=\"../page/4.html\">4</a></li><li><span aria-current=\"page\">5</span></li>"));
         assert!(middle.ends_with(
             "<li class=\"gap\">…</li><li><a href=\"../page/9.html\">9</a></li>\
-             <li><a rel=\"next\" href=\"../page/6.html\">→</a></li></ol>"
+             <li><a rel=\"next\" aria-label=\"次のページ\" href=\"../page/6.html\">→</a></li></ol>"
         ));
     }
 }

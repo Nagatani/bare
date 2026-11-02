@@ -13,8 +13,6 @@
     padding-inline: var(--gutter);
   }
 
-  /* No border: the translucent header fades into the page below it, so text
-     scrolling underneath dissolves instead of being cut by a line. */
   .site-header {
     position: sticky;
     inset-block-start: 0;
@@ -55,7 +53,6 @@
     }
   }
 
-  /* No border: the page shades gently into the footer. */
   .site-footer {
     background: linear-gradient(transparent, var(--color-surface));
     color: var(--color-muted);
