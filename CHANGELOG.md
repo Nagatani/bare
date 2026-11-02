@@ -7,7 +7,27 @@
 
 ## Unreleased
 
+### テーマへの移行（フォークした人向け）
+テンプレートと CSS を `content/themes/default/` に移し、`site.conf` の `theme:` でテーマを切り替えられるようにしました。
+自分のテーマには変えたいファイルだけを置けばよく、残りは `default` が使われるので、今後は本家の更新と衝突しにくくなります。
+
+- **何もしなくてもビルドは通ります。** `content/themes/` がなければ従来どおり `content/templates/` と `content/static/css/` を使います。
+  `content/themes/` と `content/templates/` が両方あるときは `content/templates/` を最優先で使い、警告を出します。
+- 本家を取り込むと、git は `content/templates/` と `content/static/css/` を `content/themes/default/` へ移します。
+  自分で編集していたファイルは、移動先で衝突するか、変更ごと `default` に移ることがあります。その場合は次の手順で整理してください。
+  1. 自分のテーマのディレクトリを作る（例: `content/themes/my-theme/templates/` と `content/themes/my-theme/static/css/`）
+  2. 自分で変更したテンプレート・CSS の部品だけを、そこへ移す（`git diff upstream/main -- content/themes/default` で確認できます）
+  3. `content/themes/default/` を本家の版に戻す（`git checkout upstream/main -- content/themes/default`）
+  4. `content/templates/` が残っていれば削除し、`site.conf` に `theme: my-theme` を書く
+- `custom.css`・画像・favicon・`CNAME` は、これまでどおり `content/static/` に置きます。
+
 ### 追加
+- テーマ: `content/themes/<名前>/templates/` と `content/themes/<名前>/static/` を、`site.conf` の `theme:` で選択。
+  ファイルごとに 選んだテーマ → `default` の順で探し、CSS の `@import` も同じ順で解決（`_tokens.css` だけを差し替えるなど）。
+  静的ファイルは `content/static/` が最優先。テーマが見つからない・名前が不正な場合はビルドエラー
+- `bare new <名前> --theme`: `content/themes/default/` を `content/themes/<名前>/` にコピーして、自分のテーマを作成
+- サンプル記事に「記事の書き方」「デザインを変える」「ビルドと公開のしくみ」を追加し、README の詳しい説明をそちらへ移動。
+  サンプル記事が不要なフォークは、これらも削除してください
 - テンプレートの引数: `{{pagination class="my-pager" prev="Newer"}}` のように、`{{nav}}`・`{{tags}}`・`{{toc}}`・
   `{{post_list}}`・`{{pagination}}`・`{{archive}}`・`{{tag_list}}` の class 名や文言をテンプレートから変更
   （引数なしの出力は従来どおり。知らない引数や不正な値はビルド時に警告。詳細は README の「テンプレートの引数」）

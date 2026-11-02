@@ -1,5 +1,6 @@
 //! Site orchestration: discover posts, render them through templates, write `dist/`.
 
+use std::collections::BTreeMap;
 use std::env;
 use std::error::Error;
 use std::fmt;
@@ -93,6 +94,9 @@ pub(crate) struct SiteMeta {
     pub base_url: Option<String>,
     /// Posts per page of the post list; `None` puts all posts on one page.
     per_page: Option<usize>,
+    /// `theme` in site.conf: a directory name under `content/themes/`.
+    /// `None` means the default theme (or the old layout without themes/).
+    theme: Option<String>,
 }
 
 impl SiteMeta {
@@ -130,6 +134,7 @@ impl SiteMeta {
                 .get("per_page")
                 .and_then(|v| v.trim().parse().ok())
                 .filter(|&n| n > 0),
+            theme: non_empty("theme").map(|t| t.trim().to_string()),
         })
     }
 
@@ -254,7 +259,7 @@ pub struct BuildReport {
     pub drafts_skipped: usize,
     /// Generated files (pages, feed, sitemap).
     pub written: Vec<PathBuf>,
-    /// Number of files copied from `content/static/`.
+    /// Number of static files copied (site static plus theme files).
     pub static_files: usize,
     /// Problems in the sources that did not stop the build.
     pub warnings: Vec<String>,
@@ -300,6 +305,90 @@ impl<T> WithPath<T> for io::Result<T> {
 const DEFAULT_PAGE_TEMPLATE: &str =
     "<article class=\"post-body prose\">\n<h1>{{title}}</h1>\n{{content}}\n</article>";
 
+/// Directories that templates and static files are read from, highest
+/// priority first. Lookups take the first directory that has a given file.
+///
+/// With `content/themes/` (the current layout):
+/// - templates: `content/templates/` (old layout, only if left over), the
+///   selected theme's `templates/`, then `themes/default/templates/`
+/// - static: `content/static/`, the selected theme's `static/`, then
+///   `themes/default/static/`
+///
+/// Without `content/themes/` (forks that predate themes), everything is read
+/// from `content/templates/` and `content/static/` exactly as before.
+struct Layers {
+    templates: Vec<PathBuf>,
+    statics: Vec<PathBuf>,
+}
+
+impl Layers {
+    fn resolve(
+        content_dir: &Path,
+        theme: Option<&str>,
+        warnings: &mut Vec<String>,
+    ) -> Result<Self, BuildError> {
+        let themes_dir = content_dir.join("themes");
+        let legacy_templates = content_dir.join("templates");
+        let site_static = content_dir.join("static");
+        let config_error = |path: &Path, message: String| {
+            Err(io::Error::new(io::ErrorKind::NotFound, message)).at(path)
+        };
+
+        if !themes_dir.is_dir() {
+            if let Some(name) = theme {
+                return config_error(
+                    &themes_dir,
+                    format!("site.conf sets theme: {name}, but this directory does not exist"),
+                );
+            }
+            return Ok(Self {
+                templates: vec![legacy_templates],
+                statics: vec![site_static],
+            });
+        }
+
+        let name = theme.unwrap_or(DEFAULT_THEME);
+        // The name becomes a path component; anything that could leave
+        // content/themes/ (separators, `..`) is rejected outright.
+        if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+            return config_error(
+                &content_dir.join("site.conf"),
+                format!("invalid theme name {name:?}: use a directory name under themes/"),
+            );
+        }
+        let selected = themes_dir.join(name);
+        if !selected.is_dir() {
+            return config_error(&selected, format!("theme {name:?} not found"));
+        }
+        let mut chain = vec![selected];
+        let default = themes_dir.join(DEFAULT_THEME);
+        if name != DEFAULT_THEME && default.is_dir() {
+            chain.push(default);
+        }
+
+        let mut templates = Vec::new();
+        // Usually left behind when a fork that edited content/templates/ merges
+        // the switch to themes. It still wins, so the site keeps its look, but
+        // the files should move into a theme of their own.
+        if legacy_templates.is_dir() {
+            warnings.push(format!(
+                "{}/ overrides the theme; move these files to themes/<your theme>/templates/ \
+                 and set theme: in site.conf (see CHANGELOG.md)",
+                legacy_templates.display()
+            ));
+            templates.push(legacy_templates);
+        }
+        templates.extend(chain.iter().map(|dir| dir.join("templates")));
+        let mut statics = vec![site_static];
+        statics.extend(chain.iter().map(|dir| dir.join("static")));
+        Ok(Self { templates, statics })
+    }
+}
+
+/// The theme used when site.conf has no `theme`, and the fallback for files a
+/// theme does not provide.
+const DEFAULT_THEME: &str = "default";
+
 struct Templates {
     layout: Template,
     post: Template,
@@ -313,15 +402,26 @@ struct Templates {
 }
 
 impl Templates {
-    fn load(dir: &Path) -> Result<Self, BuildError> {
-        let load = |name: &str| {
-            let path = dir.join(name);
-            Template::load(&path).at(&path)
+    /// Loads each template from the first of `dirs` (highest priority first)
+    /// that has it, so a theme can replace single files and inherit the rest.
+    fn load(dirs: &[PathBuf]) -> Result<Self, BuildError> {
+        let find = |name: &str| dirs.iter().map(|dir| dir.join(name)).find(|p| p.is_file());
+        let load_from = |path: PathBuf| Template::load(&path).at(&path);
+        let load = |name: &str| match find(name) {
+            Some(path) => load_from(path),
+            None => {
+                let searched: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
+                Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "required template not found (searched {})",
+                        searched.join(", ")
+                    ),
+                ))
+                .at(Path::new(name))
+            }
         };
-        let optional = |name: &str| match dir.join(name).exists() {
-            true => load(name).map(Some),
-            false => Ok(None),
-        };
+        let optional = |name: &str| find(name).map(load_from).transpose();
         Ok(Self {
             layout: load("layout.html")?,
             post: load("post.html")?,
@@ -353,9 +453,11 @@ impl Renderer<'_> {
         self.base.clone().with("root", root)
     }
 
-    fn render(&mut self, name: &str, template: &Template, context: &Context<'_>) -> String {
+    fn render(&mut self, template: &Template, context: &Context<'_>) -> String {
         for problem in template.problems(context) {
-            let warning = format!("templates/{name}: {problem}");
+            // The origin is the file's path, so a warning points at the theme
+            // file that actually supplied the template.
+            let warning = format!("{}: {problem}", template.origin());
             if !self.unknown.contains(&warning) {
                 self.unknown.push(warning);
             }
@@ -384,18 +486,19 @@ impl Renderer<'_> {
                 render_nav(&nav, meta.root, current, args)
             })
             .with("content", body);
-        self.render("layout.html", layout, &context)
+        self.render(layout, &context)
     }
 }
 
 /// Builds the whole site described by `config`.
 pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
-    let templates = Templates::load(&config.content_dir.join("templates"))?;
     let site = SiteMeta::load(
         &config.content_dir.join("site.conf"),
         config.base_url.as_deref(),
     )?;
     let mut warnings = Vec::new();
+    let layers = Layers::resolve(&config.content_dir, site.theme.as_deref(), &mut warnings)?;
+    let templates = Templates::load(&layers.templates)?;
     let mut notes = Vec::new();
     let (mut posts, post_drafts) = load_posts(
         &config.content_dir.join("posts"),
@@ -427,11 +530,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     fs::create_dir_all(&posts_out).at(&posts_out)?;
 
     // Static files go in first, so a generated page wins over a same-named file.
-    let static_files = copy_dir(
-        &config.content_dir.join("static"),
-        &config.out_dir,
-        &mut warnings,
-    )?;
+    let static_files = copy_static(&layers.statics, &config.out_dir, &mut warnings)?;
 
     let mut nav: Vec<&Page> = pages.iter().filter(|page| page.nav.is_some()).collect();
     nav.sort_by(|a, b| a.nav.cmp(&b.nav).then_with(|| a.title.cmp(&b.title)));
@@ -482,7 +581,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 "content",
                 images::add_dimensions(&post.html, &config.out_dir, &posts_out),
             );
-        let body = r.render("post.html", &templates.post, &context);
+        let body = r.render(&templates.post, &context);
         let meta = PageMeta {
             title: &post.title,
             description: Some(post.summary()),
@@ -499,11 +598,8 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
 
     // Without page.html (older template sets), use a minimal built-in one; the
     // post template would carry post-only links such as `../index.html`.
-    let fallback = Template::new(DEFAULT_PAGE_TEMPLATE);
-    let (page_name, page_template) = match &templates.page {
-        Some(template) => ("page.html", template),
-        None => ("built-in page template", &fallback),
-    };
+    let fallback = Template::new(DEFAULT_PAGE_TEMPLATE).named("built-in page template");
+    let page_template = templates.page.as_ref().unwrap_or(&fallback);
     for page in &pages {
         let root = "";
         let path = page.path();
@@ -525,7 +621,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 "content",
                 images::add_dimensions(&page.html, &config.out_dir, &config.out_dir),
             );
-        let body = r.render(page_name, page_template, &context);
+        let body = r.render(page_template, &context);
         let meta = PageMeta {
             title: &page.title,
             description: page.description.as_deref(),
@@ -575,7 +671,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             })
             .with("page_number", number.to_string())
             .with("page_count", page_count.to_string());
-        let body = r.render("index.html", &templates.index, &context);
+        let body = r.render(&templates.index, &context);
         let title = match number {
             1 => site.title.clone(),
             n => format!("{} ({n}/{page_count})", site.title),
@@ -610,7 +706,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 render_archive(&posts, link_tags, args)
             })
             .with("post_count", posts.len().to_string());
-        let body = r.render("archive.html", archive, &context);
+        let body = r.render(archive, &context);
         let meta = PageMeta {
             title: "Archive",
             description: None,
@@ -642,7 +738,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                     render_post_list(&group.posts, root, true, args)
                 })
                 .with("post_count", group.posts.len().to_string());
-            let body = r.render("tag.html", tag_template, &context);
+            let body = r.render(tag_template, &context);
             let title = format!("#{}", group.name);
             let meta = PageMeta {
                 title: &title,
@@ -665,7 +761,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                     render_tag_list(&groups, root, args)
                 })
                 .with("tag_count", groups.len().to_string());
-            let body = r.render("tags.html", tags_template, &context);
+            let body = r.render(tags_template, &context);
             let meta = PageMeta {
                 title: "Tags",
                 description: None,
@@ -686,7 +782,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         // must be root-relative (e.g. `/bare/`) rather than `../`.
         let root = site.base_path();
         let context = r.context(&root);
-        let body = r.render("404.html", not_found, &context);
+        let body = r.render(not_found, &context);
         let meta = PageMeta {
             title: "404 Not Found",
             description: None,
@@ -752,30 +848,62 @@ fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
 /// files copied. A missing `from` directory copies nothing. Stylesheets are
 /// written with their `@import`s inlined, and CSS partials (`_*.css`) are
 /// skipped (see [`css`]).
-fn copy_dir(from: &Path, to: &Path, warnings: &mut Vec<String>) -> Result<usize, BuildError> {
-    if !from.is_dir() {
-        return Ok(0);
+/// Copies the merged contents of `roots` (highest priority first) into `to`.
+///
+/// For each relative path the highest-priority file wins, so `content/static/`
+/// overrides the theme and the theme overrides the default theme file by file.
+/// Stylesheets are bundled (their imports resolved through the same roots) and
+/// CSS partials are skipped. Returns the number of files written.
+fn copy_static(
+    roots: &[PathBuf],
+    to: &Path,
+    warnings: &mut Vec<String>,
+) -> Result<usize, BuildError> {
+    let mut files = BTreeMap::new();
+    for root in roots {
+        collect_files(root, Path::new(""), &mut files)?;
     }
-    fs::create_dir_all(to).at(to)?;
     let mut count = 0;
-    for entry in fs::read_dir(from).at(from)? {
-        let entry = entry.at(from)?;
-        let source = entry.path();
-        let target = to.join(entry.file_name());
-        if entry.file_type().at(&source)?.is_dir() {
-            count += copy_dir(&source, &target, warnings)?;
-        } else if css::is_partial(&source) {
+    for (relative, source) in files {
+        if css::is_partial(&source) {
             continue;
-        } else if source.extension().is_some_and(|ext| ext == "css") {
-            let bundled = css::bundle(&source, warnings).at(&source)?;
+        }
+        let target = to.join(&relative);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).at(parent)?;
+        }
+        if source.extension().is_some_and(|ext| ext == "css") {
+            let bundled = css::bundle(&source, roots, warnings).at(&source)?;
             fs::write(&target, bundled).at(&target)?;
-            count += 1;
         } else {
             fs::copy(&source, &target).at(&source)?;
-            count += 1;
         }
+        count += 1;
     }
     Ok(count)
+}
+
+/// Adds every file under `dir` to `files` as (path relative to the root, source),
+/// keeping an entry already added by a higher-priority root.
+fn collect_files(
+    dir: &Path,
+    relative: &Path,
+    files: &mut BTreeMap<PathBuf, PathBuf>,
+) -> Result<(), BuildError> {
+    let current = dir.join(relative);
+    if !current.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&current).at(&current)? {
+        let entry = entry.at(&current)?;
+        let child = relative.join(entry.file_name());
+        if entry.file_type().at(&entry.path())?.is_dir() {
+            collect_files(dir, &child, files)?;
+        } else {
+            files.entry(child).or_insert_with(|| entry.path());
+        }
+    }
+    Ok(())
 }
 
 /// A Markdown file read from disk, with its file stem as the slug.
@@ -1240,6 +1368,7 @@ mod tests {
             image: None,
             base_url: base_url.map(str::to_string),
             per_page: None,
+            theme: None,
         }
     }
 
@@ -1320,5 +1449,110 @@ mod tests {
             "<li class=\"gap\">…</li><li><a href=\"../page/9.html\">9</a></li>\
              <li><a rel=\"next\" aria-label=\"次のページ\" href=\"../page/6.html\">→</a></li></ol>"
         ));
+    }
+
+    /// Creates `files` (relative path, contents) under a fresh temporary directory.
+    fn temp_tree(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = env::temp_dir().join(format!("bare-site-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for (path, contents) in files {
+            let path = dir.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn resolves_theme_layers() {
+        let dir = temp_tree(
+            "layers",
+            &[
+                ("themes/default/templates/post.html", ""),
+                ("themes/mine/templates/post.html", ""),
+            ],
+        );
+        let mut warnings = Vec::new();
+
+        let layers = Layers::resolve(&dir, Some("mine"), &mut warnings).unwrap();
+        assert_eq!(
+            layers.templates,
+            [
+                dir.join("themes/mine/templates"),
+                dir.join("themes/default/templates")
+            ]
+        );
+        assert_eq!(
+            layers.statics,
+            [
+                dir.join("static"),
+                dir.join("themes/mine/static"),
+                dir.join("themes/default/static")
+            ]
+        );
+
+        // No theme set: the default theme alone, not listed twice.
+        let layers = Layers::resolve(&dir, None, &mut warnings).unwrap();
+        assert_eq!(layers.templates, [dir.join("themes/default/templates")]);
+        assert!(warnings.is_empty());
+
+        // A leftover content/templates/ still wins, with a warning.
+        fs::create_dir_all(dir.join("templates")).unwrap();
+        let layers = Layers::resolve(&dir, Some("mine"), &mut warnings).unwrap();
+        assert_eq!(layers.templates[0], dir.join("templates"));
+        assert_eq!(warnings.len(), 1);
+
+        assert!(Layers::resolve(&dir, Some("missing"), &mut warnings).is_err());
+        assert!(Layers::resolve(&dir, Some("../mine"), &mut warnings).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_the_old_layout_without_themes() {
+        let dir = temp_tree("legacy", &[("templates/post.html", "")]);
+        let mut warnings = Vec::new();
+        let layers = Layers::resolve(&dir, None, &mut warnings).unwrap();
+        assert_eq!(layers.templates, [dir.join("templates")]);
+        assert_eq!(layers.statics, [dir.join("static")]);
+        assert!(warnings.is_empty());
+        // Asking for a theme without themes/ is a mistake, not a silent fallback.
+        assert!(Layers::resolve(&dir, Some("mine"), &mut warnings).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn merges_static_layers_file_by_file() {
+        let dir = temp_tree(
+            "static",
+            &[
+                ("site/favicon.svg", "site"),
+                ("site/css/custom.css", "custom {}"),
+                ("theme/css/_tokens.css", "theme-tokens {}"),
+                ("theme/favicon.svg", "theme"),
+                (
+                    "default/css/style.css",
+                    "@import \"_tokens.css\";\n@import \"_base.css\";",
+                ),
+                ("default/css/_tokens.css", "default-tokens {}"),
+                ("default/css/_base.css", "default-base {}"),
+            ],
+        );
+        let roots = [dir.join("site"), dir.join("theme"), dir.join("default")];
+        let out = dir.join("out");
+        let mut warnings = Vec::new();
+        let count = copy_static(&roots, &out, &mut warnings).unwrap();
+
+        assert_eq!(
+            count, 3,
+            "favicon, custom.css and style.css; partials are skipped"
+        );
+        assert_eq!(fs::read_to_string(out.join("favicon.svg")).unwrap(), "site");
+        assert_eq!(
+            fs::read_to_string(out.join("css/style.css")).unwrap(),
+            "theme-tokens {}\ndefault-base {}\n"
+        );
+        assert!(!out.join("css/_tokens.css").exists());
+        assert!(warnings.is_empty(), "{warnings:?}");
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

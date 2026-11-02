@@ -9,9 +9,14 @@
 //!
 //! Comments and blank lines are removed from the output, so the source can be
 //! documented freely without making pages heavier.
+//!
+//! Imports are looked up through layered static directories (see
+//! `site::Layers`): `@import "_tokens.css";` in the default theme's `style.css`
+//! picks up a theme's own `_tokens.css` when there is one, so a theme only has
+//! to contain the files it changes.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// True for partials such as `_tokens.css`, which are not copied on their own.
 pub fn is_partial(path: &Path) -> bool {
@@ -22,10 +27,18 @@ pub fn is_partial(path: &Path) -> bool {
 /// Reads the stylesheet at `path` with its local `@import`s inlined. Problems
 /// (missing files, import cycles) are added to `warnings` and leave the
 /// `@import` line as it was.
-pub fn bundle(path: &Path, warnings: &mut Vec<String>) -> std::io::Result<String> {
+///
+/// `roots` are the static directories to resolve imports through, highest
+/// priority first; `path` normally lies in one of them. With no roots, or for a
+/// file outside all of them, imports are resolved next to the importing file.
+pub fn bundle(
+    path: &Path,
+    roots: &[PathBuf],
+    warnings: &mut Vec<String>,
+) -> std::io::Result<String> {
     let text = fs::read_to_string(path)?;
     let mut stack = vec![canonical(path)];
-    let css = inline(&text, path, &mut stack, warnings);
+    let css = inline(&text, path, roots, &mut stack, warnings);
     let mut out = String::with_capacity(css.len());
     for line in css
         .lines()
@@ -38,8 +51,13 @@ pub fn bundle(path: &Path, warnings: &mut Vec<String>) -> std::io::Result<String
     Ok(out)
 }
 
-fn inline(text: &str, path: &Path, stack: &mut Vec<PathBuf>, warnings: &mut Vec<String>) -> String {
-    let dir = path.parent().unwrap_or(Path::new(""));
+fn inline(
+    text: &str,
+    path: &Path,
+    roots: &[PathBuf],
+    stack: &mut Vec<PathBuf>,
+    warnings: &mut Vec<String>,
+) -> String {
     // Comments go first, so a commented-out `@import` is not inlined.
     let text = strip_comments(text);
     let mut out = String::with_capacity(text.len());
@@ -48,7 +66,9 @@ fn inline(text: &str, path: &Path, stack: &mut Vec<PathBuf>, warnings: &mut Vec<
             out.push_str(line);
             continue;
         };
-        let file = dir.join(target);
+        let file = resolve(path, target, roots);
+        // A theme file importing its own name (e.g. a theme's `_tokens.css`
+        // importing "_tokens.css") resolves to itself and is caught here.
         let key = canonical(&file);
         if stack.contains(&key) {
             warnings.push(format!("{}: @import cycle at {target}", path.display()));
@@ -58,7 +78,7 @@ fn inline(text: &str, path: &Path, stack: &mut Vec<PathBuf>, warnings: &mut Vec<
         match fs::read_to_string(&file) {
             Ok(imported) => {
                 stack.push(key);
-                let body = inline(&imported, &file, stack, warnings);
+                let body = inline(&imported, &file, roots, stack, warnings);
                 stack.pop();
                 out.push_str(&body);
                 if !body.ends_with('\n') {
@@ -127,6 +147,49 @@ fn import_target(line: &str) -> Option<&str> {
     is_local.then_some(unquoted)
 }
 
+/// The file that `@import "target"` in `from` refers to.
+///
+/// The import is first made relative to the root that contains `from`
+/// (`css/style.css` importing `_a.css` means `css/_a.css`), then that relative
+/// path is looked up in every root in priority order. The first existing file
+/// wins; if none exists, the path next to `from` is returned so the caller's
+/// "cannot import" warning names a sensible file.
+fn resolve(from: &Path, target: &str, roots: &[PathBuf]) -> PathBuf {
+    let beside = from.parent().unwrap_or(Path::new("")).join(target);
+    let Some(relative) = roots
+        .iter()
+        .find_map(|root| from.strip_prefix(root).ok())
+        .and_then(|rel| normalize(&rel.parent().unwrap_or(Path::new("")).join(target)))
+    else {
+        return beside;
+    };
+    roots
+        .iter()
+        .map(|root| root.join(&relative))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or(beside)
+}
+
+/// Resolves `.` and `..` without touching the file system. `None` when the path
+/// climbs above its start, i.e. out of the static root; such imports are not
+/// layered and are resolved next to the importing file instead.
+fn normalize(path: &Path) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(out)
+}
+
 fn canonical(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -183,12 +246,47 @@ mod tests {
         .unwrap();
 
         let mut warnings = Vec::new();
-        let css = bundle(&dir.join("style.css"), &mut warnings).unwrap();
+        let css = bundle(&dir.join("style.css"), &[], &mut warnings).unwrap();
         assert_eq!(
             css,
             "@layer a;\na {}\nb {}\n@import \"_a.css\";\n@import \"_missing.css\";\nend {}\n"
         );
         assert_eq!(warnings.len(), 2);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn resolves_imports_through_layers() {
+        let dir = std::env::temp_dir().join(format!("bare-css-layers-{}", std::process::id()));
+        let base = dir.join("default");
+        let theme = dir.join("theme");
+        fs::create_dir_all(base.join("css")).unwrap();
+        fs::create_dir_all(theme.join("css")).unwrap();
+        fs::write(
+            base.join("css/style.css"),
+            "@import \"_tokens.css\";\n@import \"_base.css\";\n@import \"../../outside.css\";\n",
+        )
+        .unwrap();
+        fs::write(base.join("css/_tokens.css"), "default-tokens {}\n").unwrap();
+        fs::write(base.join("css/_base.css"), "default-base {}\n").unwrap();
+        // The theme overrides only the tokens, and its file imports its own
+        // name, which must be reported as a cycle rather than loop forever.
+        fs::write(
+            theme.join("css/_tokens.css"),
+            "theme-tokens {}\n@import \"_tokens.css\";\n",
+        )
+        .unwrap();
+
+        let roots = [theme.clone(), base.clone()];
+        let mut warnings = Vec::new();
+        let css = bundle(&base.join("css/style.css"), &roots, &mut warnings).unwrap();
+        assert_eq!(
+            css,
+            "theme-tokens {}\n@import \"_tokens.css\";\ndefault-base {}\n@import \"../../outside.css\";\n"
+        );
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(warnings[0].contains("cycle"));
+        assert!(warnings[1].contains("outside.css"));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

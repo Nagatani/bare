@@ -1,4 +1,5 @@
-//! `bare new`: creates a Markdown file with frontmatter filled in.
+//! `bare new`: creates a Markdown file with frontmatter filled in, or a new
+//! theme copied from the default one.
 
 use std::fs;
 use std::io;
@@ -14,14 +15,19 @@ pub struct NewOptions {
     pub title: Option<String>,
     /// Create a standalone page in `pages/` instead of a post.
     pub page: bool,
+    /// Create a theme in `themes/` (a copy of the default theme) instead of a post.
+    pub theme: bool,
 }
 
 /// Writes the new file under `content_dir` and returns its path. Posts start as
 /// drafts, so they show up in `bare serve` but are not published until
 /// `draft: true` is removed.
 pub fn create(content_dir: &Path, options: &NewOptions) -> io::Result<PathBuf> {
+    if options.theme {
+        return create_theme(content_dir, options.slug.trim());
+    }
     let slug = options.slug.trim().trim_end_matches(".md");
-    if slug.is_empty() || slug.starts_with('.') || slug.contains(['/', '\\']) {
+    if !is_plain_name(slug) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
@@ -51,6 +57,67 @@ pub fn create(content_dir: &Path, options: &NewOptions) -> io::Result<PathBuf> {
     fs::create_dir_all(&dir)?;
     fs::write(&path, text)?;
     Ok(path)
+}
+
+/// Copies `themes/default/` to `themes/<name>/` and returns the new directory.
+///
+/// The copy is complete so every file is at hand to edit. Files left unchanged
+/// can be deleted afterwards: the build falls back to the default theme for
+/// them, and only then do upstream fixes to those files reach the site.
+fn create_theme(content_dir: &Path, name: &str) -> io::Result<PathBuf> {
+    if !is_plain_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid theme name `{name}`: use something like `my-theme`"),
+        ));
+    }
+    let themes = content_dir.join("themes");
+    let source = themes.join("default");
+    if name == "default" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "`default` is the built-in theme; choose another name",
+        ));
+    }
+    if !source.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "{} not found: there is no default theme to copy",
+                source.display()
+            ),
+        ));
+    }
+    let target = themes.join(name);
+    if target.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("{} already exists", target.display()),
+        ));
+    }
+    copy_tree(&source, &target)?;
+    Ok(target)
+}
+
+/// Recursively copies the directory `from` to `to`, which must not exist yet.
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// True for a name usable as a single file or directory name: not empty, not
+/// hidden, and without path separators, so it cannot point outside its folder.
+fn is_plain_name(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('.') && !name.contains(['/', '\\'])
 }
 
 /// Today's local date as `YYYY-MM-DD`. Uses the `date` command where available
@@ -105,6 +172,7 @@ mod tests {
             slug: "hello".into(),
             title: Some("Say \"hi\"".into()),
             page: false,
+            theme: false,
         };
         let path = create(&dir, &options).unwrap();
         let text = fs::read_to_string(&path).unwrap();
@@ -116,8 +184,37 @@ mod tests {
             slug: "../x".into(),
             title: None,
             page: true,
+            theme: false,
         };
         assert!(create(&dir, &bad).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn copies_the_default_theme() {
+        let dir = std::env::temp_dir().join(format!("bare-new-theme-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let theme = |name: &str| NewOptions {
+            slug: name.into(),
+            title: None,
+            page: false,
+            theme: true,
+        };
+        // Without a default theme there is nothing to copy.
+        assert!(create(&dir, &theme("mine")).is_err());
+
+        fs::create_dir_all(dir.join("themes/default/static/css")).unwrap();
+        fs::write(dir.join("themes/default/static/css/_tokens.css"), "t {}").unwrap();
+        let path = create(&dir, &theme("mine")).unwrap();
+        assert_eq!(path, dir.join("themes/mine"));
+        assert_eq!(
+            fs::read_to_string(path.join("static/css/_tokens.css")).unwrap(),
+            "t {}"
+        );
+
+        assert!(create(&dir, &theme("mine")).is_err(), "never overwrites");
+        assert!(create(&dir, &theme("default")).is_err());
+        assert!(create(&dir, &theme("../x")).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

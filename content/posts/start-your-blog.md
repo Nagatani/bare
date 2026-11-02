@@ -89,7 +89,7 @@ description: 一覧や SNS に表示される短い説明
 
 デザインを変えたいときは `content/static/css/custom.css` に CSS を書きます。
 たとえば次のように書くと、リンクの色と本文の幅が変わります。
-色・フォント・余白などの変数は `content/static/css/_tokens.css` に一覧があります。
+色・フォント・余白などの変数は `content/themes/default/static/css/_tokens.css` に一覧があります。
 
 ```css
 :root {
@@ -99,7 +99,8 @@ description: 一覧や SNS に表示される短い説明
 ```
 
 `custom.css` は本家では変更されないので、本家の更新を取り込んでも衝突しません。
-HTML の構造を変えたいときは `content/templates/` を編集します。
+HTML の構造を変えたいときは、`cargo run -- new my-theme --theme` で自分のテーマを作ります
+（詳しくは [デザインを変える](customize-design.html)）。
 
 プロフィールなどの固定ページは `content/pages/` に置きます（[About](../about.html) がその例です）。
 frontmatter に `nav: 1` と書くと、ヘッダーのナビゲーションに表示されます。
@@ -109,10 +110,10 @@ frontmatter に `nav: 1` と書くと、ヘッダーのナビゲーションに�
 | ファイル | 用途 |
 | --- | --- |
 | `tags/` | タグ別の記事一覧。記事のタグをクリックすると開きます |
-| `archive.html` | 年別の記事一覧（`content/templates/archive.html`） |
+| `archive.html` | 年別の記事一覧 |
 | `feed.xml` | Atom フィード。RSS リーダーで購読できます |
 | `sitemap.xml` | 検索エンジン向けのページ一覧 |
-| `404.html` | 存在しない URL を開いたときのページ（`content/templates/404.html`） |
+| `404.html` | 存在しない URL を開いたときのページ |
 
 ## 6. 手元でプレビューする（任意）
 
@@ -145,10 +146,13 @@ git fetch upstream
 git merge upstream/main
 ```
 
-衝突しやすいのは、自分で書き換えた `content/site.conf` と `content/templates/`、それに削除したサンプル記事です。
+衝突しやすいのは、自分で書き換えた `content/site.conf` と、削除したサンプル記事です。
+デザインを `custom.css` や自分のテーマで変えていれば、本家の `default` テーマとは衝突しません。
 
 - 削除したサンプル記事が衝突したら、`git rm content/posts/<ファイル名>` で削除したままにします
-- `site.conf` やテンプレートが衝突したら、自分の版を残します
+- `site.conf` が衝突したら、自分の版を残します
+- 本家が新しいサンプル記事を追加した場合も、不要なら削除してください
 
+自分のテーマで差し替えたテンプレートには、本家の変更が届きません。
 本家の [CHANGELOG.md](https://github.com/Nagatani/bare/blob/main/CHANGELOG.md) の「テンプレートの変更」を見て、必要な差分だけを手で反映してください。
 反映しなくてもビルドは通ります（新しい機能が出力されないだけです）。

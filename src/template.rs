@@ -161,17 +161,32 @@ struct Token<'s> {
 #[derive(Debug, Clone)]
 pub struct Template {
     source: String,
+    /// Where the template came from, for warnings: the file path when loaded
+    /// with [`Template::load`], since with themes the same name (`post.html`)
+    /// may come from different directories.
+    origin: String,
 }
 
 impl Template {
     pub fn new(source: impl Into<String>) -> Self {
         Self {
             source: source.into(),
+            origin: "template".to_string(),
         }
     }
 
     pub fn load(path: &Path) -> io::Result<Self> {
-        fs::read_to_string(path).map(Self::new)
+        Ok(Self::new(fs::read_to_string(path)?).named(path.display().to_string()))
+    }
+
+    /// Sets the name shown in warnings, e.g. for a built-in template.
+    pub fn named(mut self, origin: impl Into<String>) -> Self {
+        self.origin = origin.into();
+        self
+    }
+
+    pub fn origin(&self) -> &str {
+        &self.origin
     }
 
     /// Placeholders in order of appearance. Stops at an unclosed `{{`, which

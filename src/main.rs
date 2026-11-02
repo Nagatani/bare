@@ -30,11 +30,12 @@ USAGE:
     bare [build] [OPTIONS]   Build the site into the output directory
     bare check [OPTIONS]     Build, then fail on broken links or anchors
     bare serve [OPTIONS]     Preview with rebuild on change and live reload
-    bare new <NAME> [--title <TITLE>] [--page]
-                             Create content/posts/NAME.md (a draft) or pages/NAME.md
+    bare new <NAME> [--title <TITLE>] [--page | --theme]
+                             Create content/posts/NAME.md (a draft), pages/NAME.md,
+                             or themes/NAME/ (a copy of the default theme)
 
 OPTIONS:
-    -c, --content <DIR>   Source directory with posts/ and templates/  [default: content]
+    -c, --content <DIR>   Source directory with posts/ and themes/     [default: content]
     -o, --out <DIR>       Output directory          [default: dist, serve: target/bare-serve]
         --clean           Delete the whole output directory before building
         --drafts          Include posts marked `draft: true` (always on for serve)
@@ -44,6 +45,7 @@ OPTIONS:
         --subpath <PATH>  URL path for serve, e.g. /bare/  [default: detected like GitHub Pages]
         --title <TITLE>   Title for new                                [default: NAME]
         --page            Make new create a standalone page instead of a post
+        --theme           Make new copy the default theme to themes/NAME/
     -h, --help            Print this help
     -V, --version         Print version";
 
@@ -72,6 +74,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
         slug: String::new(),
         title: None,
         page: false,
+        theme: false,
     };
     let mut mode = "build";
     let mut out_given = false;
@@ -84,6 +87,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
             "serve" => mode = "serve",
             "new" if mode == "build" => mode = "new",
             "--page" => new.page = true,
+            "--theme" => new.theme = true,
             name if mode == "new" && new.slug.is_empty() && !name.starts_with('-') => {
                 new.slug = name.to_string();
             }
@@ -119,6 +123,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
     Ok(match mode {
         "check" => Command::Check(config),
         "new" if new.slug.is_empty() => return Err("missing NAME for `new`".to_string()),
+        "new" if new.page && new.theme => {
+            return Err("`--page` and `--theme` cannot be used together".to_string())
+        }
         "new" => Command::New(config, new),
         "serve" => {
             // Keep preview builds (with localhost URLs) out of the publishable dist/.
@@ -160,7 +167,15 @@ fn main() -> ExitCode {
         Command::New(config, options) => match scaffold::create(&config.content_dir, &options) {
             Ok(path) => {
                 println!("bare: created {}", path.display());
-                if !options.page {
+                if options.theme {
+                    println!(
+                        "  copied from the default theme: set `theme: {}` in site.conf to use it",
+                        options.slug.trim()
+                    );
+                    println!(
+                        "  delete the files you do not change, so updates to the default theme still reach them"
+                    );
+                } else if !options.page {
                     println!("  it is a draft: preview with `bare serve`, remove `draft: true` to publish");
                 }
             }
