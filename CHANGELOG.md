@@ -30,6 +30,8 @@
 - `bare new <名前> --theme`: `content/themes/default/` を `content/themes/<名前>/` にコピーして、自分のテーマを作成
 - サンプル記事に「記事の書き方」「デザインを変える」「ビルドと公開のしくみ」を追加し、README の詳しい説明をそちらへ移動。
   サンプル記事が不要なフォークは、これらも削除してください
+- サンプル記事「クレートなしで Rust を書く」（`rust-without-crates.md`）を削除し、内容を「Hello, World」に統合。
+  「Hello, World」は記事の表示の見本として整理し、記法の一覧は「記事の書き方」に集約
 - テンプレートの引数: `{{pagination class="my-pager" prev="Newer"}}` のように、`{{nav}}`・`{{tags}}`・`{{toc}}`・
   `{{post_list}}`・`{{pagination}}`・`{{archive}}`・`{{tag_list}}` の class 名や文言をテンプレートから変更
   （引数なしの出力は従来どおり。知らない引数や不正な値はビルド時に警告。詳細は README の「テンプレートの引数」）

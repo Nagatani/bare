@@ -17,7 +17,7 @@ description: frontmatter の項目、固定ページ、使える Markdown と HT
 title: 記事タイトル
 date: 2026-10-31
 tags: [rust, ssg]
-description: 一覧・検索結果・SNS・RSS に表示される説明（任意）
+description: 一覧・検索結果・SNS・フィードに表示される説明（任意）
 image: /images/cover.png
 draft: true
 ---

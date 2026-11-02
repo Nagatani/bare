@@ -19,7 +19,7 @@
   </defs>
   <rect class="box" x="10" y="40" width="170" height="80" rx="10"/>
   <text class="label" x="95" y="76" text-anchor="middle">content/</text>
-  <text class="sub" x="95" y="98" text-anchor="middle">posts · templates · static</text>
+  <text class="sub" x="95" y="98" text-anchor="middle">posts · themes · static</text>
   <path class="arrow" d="M186 80H244" marker-end="url(#head)"/>
   <rect class="core" x="250" y="40" width="140" height="80" rx="10"/>
   <text x="320" y="76" text-anchor="middle" fill="#fff" font-weight="700">bare</text>
