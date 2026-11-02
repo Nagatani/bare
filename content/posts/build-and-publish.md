@@ -137,3 +137,6 @@ SNS で共有したときのプレビュー画像（`og:image`）にします。
 - 公開 URL（独自ドメインを含む）は自動で `--base-url` に渡されるので、フィード・サイトマップ・OGP は設定なしで生成されます。
   手元のビルドで公開 URL が分からない場合、これらは生成されません（ログに note が出ます）。
 - PR とブランチでは `.github/workflows/ci.yml` が、フォーマット・clippy・テスト・`bare check` を実行します。
+- フォークでは `.github/workflows/update.yml` を Actions タブから手動で実行すると、`bare update` で本家の更新を取り込み、`cargo test` と `bare check` が通ればプルリクエストを作ります（本家のリポジトリでは動きません）。
+  初回だけ **Settings → Actions → General → Workflow permissions** の **Allow GitHub Actions to create and approve pull requests** をオンにします。
+  プルリクエストは **Create a merge commit** でマージします（[GitHub 上で取り込む](start-your-blog.html#github-上で取り込む)）。

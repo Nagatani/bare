@@ -1,0 +1,175 @@
+# Merge the upstream bare repository into this fork with `bare update`, and
+# open a pull request with the result. Run it from Actions → "Update from
+# upstream bare" → Run workflow. Paths in update_exclude (content/site.conf)
+# are kept as they are.
+#
+# One-time setup: Settings → Actions → General → Workflow permissions →
+# check "Allow GitHub Actions to create and approve pull requests".
+#
+# Merge the pull request with "Create a merge commit". Squash or rebase drops
+# the upstream history, and the next update brings the same changes again.
+name: Update from upstream bare
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bare-update
+  cancel-in-progress: false
+
+env:
+  BRANCH: bare-update
+  BASE: ${{ github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  update:
+    # The upstream repository has nothing to update from.
+    if: github.repository != 'Nagatani/bare'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # bare update needs the whole history to find the merge base.
+          fetch-depth: 0
+
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: cargo-update-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'src/**') }}
+          restore-keys: cargo-update-${{ runner.os }}-
+
+      - name: Set committer identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge upstream
+        id: merge
+        shell: bash
+        run: |
+          set +e
+          cargo run --locked --quiet -- update 2>&1 | tee "$RUNNER_TEMP/update.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          merging=false
+          git rev-parse -q --verify MERGE_HEAD >/dev/null && merging=true
+
+          if [ "$status" -eq 0 ] && [ "$merging" = false ]; then
+            echo "Already up to date with upstream bare." >> "$GITHUB_STEP_SUMMARY"
+            echo "result=up-to-date" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$merging" = false ]; then
+            echo "::error title=bare update failed::See the log of this step."
+            exit 1
+          fi
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "## Conflicts with upstream bare"
+              echo
+              echo "These files conflict outside update_exclude, so nothing was pushed:"
+              echo
+              git diff --name-only --diff-filter=U | sed 's/^/- `/; s/$/`/'
+              echo
+              echo "Run \`cargo run -- update\` on your computer, fix the files, then \`git add\` them, \`git commit\` and \`git push\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Conflicts with upstream bare::Update on your computer with \`cargo run -- update\`. The conflicting files are listed in the run summary."
+            exit 1
+          fi
+
+          # GITHUB_TOKEN may not push commits that touch workflow files, even
+          # when the merged result leaves them as they are.
+          workflows=$(git log --format= --name-only HEAD..MERGE_HEAD -- .github/workflows | sort -u)
+          if [ -n "$workflows" ]; then
+            {
+              echo "## Workflow files changed upstream"
+              echo
+              echo "Upstream changed these files. GitHub Actions cannot push such changes, so nothing was pushed:"
+              echo
+              echo "$workflows" | sed 's/^/- `/; s/$/`/'
+              echo
+              echo "Run \`cargo run -- update\` on your computer, then \`git commit\` and \`git push\`. Later updates can be run here again."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Workflow files changed upstream::GitHub Actions cannot push them. Update on your computer this time with \`cargo run -- update\`."
+            exit 1
+          fi
+
+          echo "result=merged" >> "$GITHUB_OUTPUT"
+          echo "upstream=$(git rev-parse --short MERGE_HEAD)" >> "$GITHUB_OUTPUT"
+
+      # CI does not run on pull requests opened by GitHub Actions, so the
+      # merged tree is tested here before it is pushed.
+      - name: Test
+        if: steps.merge.outputs.result == 'merged'
+        run: cargo test --locked
+
+      - name: Build and check site
+        if: steps.merge.outputs.result == 'merged'
+        run: cargo run --locked -- check --clean --no-og --base-url https://example.github.io/bare/
+
+      - name: Push and open pull request
+        if: steps.merge.outputs.result == 'merged'
+        shell: bash
+        env:
+          UPSTREAM: ${{ steps.merge.outputs.upstream }}
+        run: |
+          git commit --quiet -m "Merge upstream bare ($UPSTREAM)"
+          if ! git push --force --quiet origin "HEAD:refs/heads/$BRANCH"; then
+            echo "::error title=Cannot push $BRANCH::Update on your computer this time with \`cargo run -- update\`."
+            exit 1
+          fi
+
+          {
+            echo "Merges upstream bare ($UPSTREAM) with \`bare update\`."
+            echo "Paths in \`update_exclude\` (content/site.conf) are kept as they were."
+            echo
+            echo "> [!IMPORTANT]"
+            echo "> Merge with **Create a merge commit**. Squash or rebase drops the upstream history, and the next update brings the same changes again."
+            echo
+            if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .allow_merge_commit 2>/dev/null)" = "false" ]; then
+              echo "> [!WARNING]"
+              echo "> Merge commits are turned off for this repository. Turn on \"Allow merge commits\" in Settings → General → Pull Requests."
+              echo
+            fi
+            echo "\`cargo test\` and \`bare check\` passed on the merged files. (CI does not run on pull requests opened by GitHub Actions.)"
+            echo
+            echo "Using your own theme? See the template changes in [CHANGELOG.md](https://github.com/Nagatani/bare/blob/main/CHANGELOG.md)."
+            echo
+            echo "<details><summary>Output of bare update</summary>"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/update.log"
+            echo '```'
+            echo
+            echo "</details>"
+          } > "$RUNNER_TEMP/body.md"
+
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base "$BASE" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" --title "Update from upstream bare ($UPSTREAM)" --body-file "$RUNNER_TEMP/body.md" >/dev/null
+            echo "Updated the pull request: $existing" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE" --head "$BRANCH" \
+                --title "Update from upstream bare ($UPSTREAM)" --body-file "$RUNNER_TEMP/body.md" 2>"$RUNNER_TEMP/pr.err"); then
+            cat "$RUNNER_TEMP/pr.err"
+            compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$BASE...$BRANCH"
+            if grep -q "not permitted to create" "$RUNNER_TEMP/pr.err"; then
+              echo "::error title=Cannot open pull requests::Check \"Allow GitHub Actions to create and approve pull requests\" in Settings → Actions → General, then re-run this workflow. Or open it yourself: $compare"
+            else
+              echo "::error title=Cannot open pull request::The branch $BRANCH was pushed. Open the pull request yourself: $compare"
+            fi
+            exit 1
+          fi
+          echo "Opened a pull request: $url" >> "$GITHUB_STEP_SUMMARY"

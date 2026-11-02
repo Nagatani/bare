@@ -149,7 +149,7 @@ git merge upstream/main
 
 本家のサンプル記事の追加・更新・削除を、自分のブログに持ち込みたくないこともあります。
 そのときは、`content/posts/` や `content/pages/` を除いて取り込みます。
-Sync fork ではできないので、手元で `bare update` を使います。
+Sync fork ではできないので、`bare update` を使います（手元のほか、後述の「GitHub 上で取り込む」のとおり GitHub Actions でも実行できます）。
 
 除外するパスは、`content/site.conf` の `update_exclude` に、リポジトリのルートからの相対パスを空白区切りで書きます。
 はじめから記事・固定ページ・静的ファイルが指定されています。
@@ -198,3 +198,25 @@ git push
 自分のテーマで差し替えたテンプレートには、本家の変更が届きません。
 本家の [CHANGELOG.md](https://github.com/Nagatani/bare/blob/main/CHANGELOG.md) の「テンプレートの変更」を見て、必要な差分だけを手で反映してください。
 反映しなくてもビルドは通ります（新しい機能が出力されないだけです）。
+
+### GitHub 上で取り込む
+
+手元に Rust がなくても、GitHub Actions で `bare update` を実行できます。
+結果はプルリクエストになるので、内容を確かめてからマージします。
+
+1. 初回だけ、Settings → Actions → General → Workflow permissions の `Allow GitHub Actions to create and approve pull requests` にチェックを入れて保存します
+2. Actions タブで `Update from upstream bare` を選び、`Run workflow` を押します
+3. 作られたプルリクエストを確かめ、**Create a merge commit** でマージします
+
+マージは必ず Create a merge commit で行ってください。
+Squash や Rebase でマージすると本家の履歴がつながらず、次の取り込みで同じ変更がまた出てきて衝突します。
+Create a merge commit が選べないときは、Settings → General → Pull Requests の `Allow merge commits` をオンにします。
+
+- 本家に新しい変更がなければ、何もせずに終わります
+- プルリクエストを作る前に `cargo test` と `bare check` を実行し、失敗したら止まります（GitHub Actions が作ったプルリクエストでは CI が動かないため）
+- マージする前にもう一度実行すると、同じプルリクエスト（`bare-update` ブランチ）が新しい内容で上書きされます
+- 次の場合は何も push せずに止まり、実行結果のページに理由が表示されます。今回だけ手元で `cargo run -- update` を使って取り込んでください
+  - 除外したパスの外で衝突したとき
+  - 本家が `.github/workflows/` のファイルを変更したとき（GitHub Actions の権限では、ワークフローを変更するコミットを push できません）
+
+このワークフローが入る前にフォークした場合は、まだ使えません。一度手元で取り込むと、次から使えるようになります。

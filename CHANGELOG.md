@@ -35,6 +35,11 @@
 - `bare update`: 本家の `main` を取り込み、`site.conf` の `update_exclude` に書いたパス（サンプルの `site.conf` では `content/posts content/pages content/static`）を
   マージ前の状態に戻して、コミットの手前で止まる。`upstream` リモートがあればそこから取り込む。
   コミットしていない変更があるときやマージの途中では何もしない。除外したパスの外で衝突したら、終了コード 1 で一覧を表示
+- `update.yml`: フォークの Actions タブから手動で実行し、`bare update` で本家を取り込んでプルリクエストを作るワークフロー。
+  `cargo test` と `bare check` が通ったときだけ `bare-update` ブランチに push する。除外したパスの外で衝突したときと、
+  本家が `.github/workflows/` を変更したとき（`GITHUB_TOKEN` では push できない）は、何もせずに手元での取り込みを案内する。
+  初回だけ Settings → Actions → General の「Allow GitHub Actions to create and approve pull requests」をオンにする。
+  プルリクエストは Create a merge commit でマージする（Squash・Rebase では次の取り込みで同じ変更が出る）
 - OGP 画像の自動生成: テーマの `og.html`（タイトル・サイト名など）を Google Chrome（ヘッドレス）で撮った 1200×630 の画像を
   `og/` に作り、`og:image` に設定。記事・固定ページは frontmatter に `image` がないとき、トップ・年別アーカイブ・
   タグ一覧・タグ別ページは `site.conf` に `image` がないときに作る。公開 URL が分かるときだけ作り、
