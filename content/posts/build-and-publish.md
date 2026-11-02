@@ -39,6 +39,7 @@ description: コマンドとオプション、プレビューサーバー、生�
 | `image` | SNS で共有したときの既定のプレビュー画像 | （空） |
 | `per_page` | 記事一覧の 1 ページあたりの件数 | （空。すべてを 1 ページに） |
 | `theme` | 使うテーマ（`content/themes/` の下のディレクトリ名） | `default` |
+| `archive_title` / `tags_title` / `not_found_title` | 年別アーカイブ・タグ一覧・404 ページの `<title>` に使う名前 | `Archive` / `Tags` / `404 Not Found` |
 
 ## プレビュー（bare serve）
 

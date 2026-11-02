@@ -94,6 +94,11 @@ pub(crate) struct SiteMeta {
     pub base_url: Option<String>,
     /// Posts per page of the post list; `None` puts all posts on one page.
     per_page: Option<usize>,
+    /// Names of the generated list pages, used in `<title>` and OGP. They live
+    /// in site.conf rather than templates because the engine builds the title.
+    archive_title: String,
+    tags_title: String,
+    not_found_title: String,
     /// `theme` in site.conf: a directory name under `content/themes/`.
     /// `None` means the default theme (or the old layout without themes/).
     theme: Option<String>,
@@ -134,6 +139,11 @@ impl SiteMeta {
                 .get("per_page")
                 .and_then(|v| v.trim().parse().ok())
                 .filter(|&n| n > 0),
+            // non_empty, not value: an empty key falls back to the default
+            // instead of producing a blank page title.
+            archive_title: non_empty("archive_title").unwrap_or_else(|| "Archive".into()),
+            tags_title: non_empty("tags_title").unwrap_or_else(|| "Tags".into()),
+            not_found_title: non_empty("not_found_title").unwrap_or_else(|| "404 Not Found".into()),
             theme: non_empty("theme").map(|t| t.trim().to_string()),
         })
     }
@@ -644,11 +654,11 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     };
     let page_count = chunks.len();
     if page_count > 1 && !templates.index.uses("pagination") {
-        warnings.push(
-            "per_page is set but templates/index.html has no {{pagination}}: \
-             posts after the first page are only reachable from tags and archive.html"
-                .to_string(),
-        );
+        warnings.push(format!(
+            "per_page is set but {} has no {{{{pagination}}}}: \
+             posts after the first page are only reachable from tags and archive.html",
+            templates.index.origin()
+        ));
     }
     if page_count > 1 {
         let dir = config.out_dir.join("page");
@@ -708,14 +718,14 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             .with("post_count", posts.len().to_string());
         let body = r.render(archive, &context);
         let meta = PageMeta {
-            title: "Archive",
+            title: &site.archive_title,
             description: None,
             path: Some("archive.html"),
             image: None,
             published: None,
             root: "",
         };
-        let page_title = format!("Archive · {}", site.title);
+        let page_title = format!("{} · {}", site.archive_title, site.title);
         let html = r.layout(&templates.layout, &page_title, &meta, None, body);
         write(config.out_dir.join("archive.html"), html)?;
         sitemap.push((
@@ -763,14 +773,14 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 .with("tag_count", groups.len().to_string());
             let body = r.render(tags_template, &context);
             let meta = PageMeta {
-                title: "Tags",
+                title: &site.tags_title,
                 description: None,
                 path: Some("tags/"),
                 image: None,
                 published: None,
                 root,
             };
-            let page_title = format!("Tags · {}", site.title);
+            let page_title = format!("{} · {}", site.tags_title, site.title);
             let html = r.layout(&templates.layout, &page_title, &meta, None, body);
             write(tags_out.join("index.html"), html)?;
             sitemap.push(("tags/".to_string(), None));
@@ -784,14 +794,14 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         let context = r.context(&root);
         let body = r.render(not_found, &context);
         let meta = PageMeta {
-            title: "404 Not Found",
+            title: &site.not_found_title,
             description: None,
             path: None,
             image: None,
             published: None,
             root: &root,
         };
-        let page_title = format!("404 Not Found · {}", site.title);
+        let page_title = format!("{} · {}", site.not_found_title, site.title);
         let html = r.layout(&templates.layout, &page_title, &meta, None, body);
         write(config.out_dir.join("404.html"), html)?;
     }
@@ -1368,6 +1378,9 @@ mod tests {
             image: None,
             base_url: base_url.map(str::to_string),
             per_page: None,
+            archive_title: "Archive".into(),
+            tags_title: "Tags".into(),
+            not_found_title: "404 Not Found".into(),
             theme: None,
         }
     }
@@ -1554,5 +1567,132 @@ mod tests {
         assert!(!out.join("css/_tokens.css").exists());
         assert!(warnings.is_empty(), "{warnings:?}");
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Builds a whole site through `build`: theme fallback, token arguments,
+    /// CSS overrides, site.conf page names and warnings, end to end.
+    #[test]
+    fn builds_a_themed_site_end_to_end() {
+        let dir = temp_tree(
+            "build",
+            &[
+                (
+                    "content/site.conf",
+                    "title: T\ntheme: mine\nper_page: 1\narchive_title: 年別\n",
+                ),
+                (
+                    "content/posts/a.md",
+                    "---\ntitle: A\ndate: 2026-01-02\ntags: [x]\n---\n\n## One\n\ntext\n\n## Two\n",
+                ),
+                ("content/posts/b.md", "---\ntitle: B\ndate: 2025-01-01\n---\n\nb\n"),
+                ("content/static/css/custom.css", "custom {}"),
+                (
+                    "content/themes/default/templates/layout.html",
+                    "<title>{{page_title}}</title>{{content}}",
+                ),
+                (
+                    "content/themes/default/templates/post.html",
+                    "<h1>{{title}}</h1>{{tags}}{{toc}}{{content}}",
+                ),
+                ("content/themes/default/templates/index.html", "{{post_list}}{{pagination}}"),
+                (
+                    "content/themes/default/templates/archive.html",
+                    "{{archive heading=\"h3\" count_suffix=\" posts\"}}",
+                ),
+                ("content/themes/default/templates/tag.html", "{{post_list}}"),
+                ("content/themes/default/static/css/style.css", "@import \"_tokens.css\";"),
+                ("content/themes/default/static/css/_tokens.css", "default {}"),
+                // The theme replaces two templates and one CSS partial only.
+                (
+                    "content/themes/mine/templates/post.html",
+                    "<h1 class=\"mine\">{{title}}</h1>{{tags class=\"chips\" prefix=\"#\"}}{{toc class=\"\"}}{{content}}",
+                ),
+                (
+                    "content/themes/mine/templates/index.html",
+                    "{{post_list item_class=\"card\" desc=\"false\"}}{{pagination next=\"Older\" bogus=\"1\"}}",
+                ),
+                ("content/themes/mine/static/css/_tokens.css", "mine {}"),
+            ],
+        );
+        let out = dir.join("dist");
+        let report = build(&Config {
+            content_dir: dir.join("content"),
+            out_dir: out.clone(),
+            clean: false,
+            drafts: false,
+            base_url: None,
+        })
+        .unwrap();
+        let read = |path: &str| fs::read_to_string(out.join(path)).unwrap();
+
+        let post = read("posts/a.html");
+        assert!(post.contains("<h1 class=\"mine\">A</h1>"));
+        assert!(post.contains(
+            "<ul class=\"chips\" aria-label=\"タグ\"><li class=\"tag\"><a href=\"../tags/x.html\">#x</a></li></ul>"
+        ));
+        assert!(post.contains("<ol>\n<li><a href=\"#one\">One</a>"));
+
+        let index = read("index.html");
+        assert!(index.contains("<li class=\"card\"><time datetime=\"2026-01-02\">"));
+        assert!(index
+            .contains("<a rel=\"next\" aria-label=\"次のページ\" href=\"page/2.html\">Older</a>"));
+        assert!(out.join("page/2.html").is_file());
+
+        let archive = read("archive.html");
+        assert!(archive.contains("<title>年別 · T</title>"));
+        assert!(archive.contains(
+            "<h3 id=\"y2026\">2026<span class=\"tag-count\"><span class=\"visually-hidden\">、</span>1\
+             <span class=\"visually-hidden\"> posts</span></span></h3>"
+        ));
+
+        // The default style.css picks up the theme's partial; partials are not copied.
+        assert_eq!(read("css/style.css"), "mine {}\n");
+        assert_eq!(read("css/custom.css"), "custom {}\n");
+        assert!(!out.join("css/_tokens.css").exists());
+
+        // Warnings name the theme file that actually supplied the template.
+        let bogus: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|w| w.contains("unknown argument bogus"))
+            .collect();
+        assert_eq!(bogus.len(), 1, "{:?}", report.warnings);
+        assert!(bogus[0].contains(&format!("themes{}mine", std::path::MAIN_SEPARATOR)));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn renders_markup_with_arguments() {
+        let nav = vec![("about.html".to_string(), "About".to_string())];
+        assert_eq!(
+            render_nav(&nav, "../", Some("about.html"), &Args::default()),
+            "<nav class=\"site-nav\" aria-label=\"サイト\">\
+             <a href=\"../about.html\" aria-current=\"page\">About</a></nav>"
+        );
+        let args = Args::parse("class=\"\" label=\"Main\"").unwrap();
+        assert_eq!(
+            render_nav(&nav, "", None, &args),
+            "<nav aria-label=\"Main\"><a href=\"about.html\">About</a></nav>"
+        );
+
+        let groups = [TagGroup {
+            name: "rust".into(),
+            file: "rust".into(),
+            posts: Vec::new(),
+        }];
+        let args =
+            Args::parse("link_class=\"chip\" count_prefix=\"\" count_suffix=\" posts\"").unwrap();
+        assert_eq!(
+            render_tag_list(&groups, "../", &args),
+            "<li><a class=\"chip\" href=\"../tags/rust.html\">rust</a><span class=\"tag-count\">0\
+             <span class=\"visually-hidden\"> posts</span></span></li>\n"
+        );
+
+        let args =
+            Args::parse("class=\"pg\" current_class=\"now\" prev=\"Newer\" gap=\"...\"").unwrap();
+        let html = render_pagination(5, 9, "", &args);
+        assert!(html.starts_with("<ol class=\"pg\"><li><a rel=\"prev\" aria-label=\"前のページ\" href=\"page/4.html\">Newer</a>"));
+        assert!(html.contains("<li class=\"gap\">...</li>"));
+        assert!(html.contains("<span class=\"now\" aria-current=\"page\">5</span>"));
     }
 }
