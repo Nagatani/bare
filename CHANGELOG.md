@@ -80,6 +80,9 @@
   `<main>` が残りの高さを埋める（CSS のみ。テンプレートの変更は不要）。
   グリッドの列は `minmax(0, 1fr)` にして、長いコードや表があってもスマホ幅でページが横にはみ出さないようにしている
   （この指定がない途中の版では、長いコードや表のある記事がスマホ幅で横にスクロールしていました）
+- サイト直下のページ（トップ・年別アーカイブ・固定ページ）で `{{root}}` を空文字ではなく `./` に変更。
+  `href="{{root}}"` が自分自身へのリンクにならず、どのページからもトップページ（`/bare/` など）へ戻れる。
+  ページ送りの 1 ページ目へのリンクも `index.html` ではなくディレクトリ（`../`）に
 - テンプレートの警告に、実際に使われたファイルのパス（例: `content/themes/my-theme/templates/index.html`）を表示
 - 読み上げ向けのラベルを追加: `{{nav}}` に `aria-label="サイト"`、記事のタグ一覧に `aria-label="タグ"`、
   ページ送りの ←/→ に「前のページ」「次のページ」。年別アーカイブとタグ一覧の件数は「2026、3件」のように読み上げる
@@ -112,6 +115,8 @@
 - `post.html` / `archive.html` / `tag.html` / `tags.html` / `404.html`: 戻るリンクの矢印を
   `<span aria-hidden="true">←</span>` に変更（読み上げで「矢印」と読まれないように）
 - `tag.html`: `<span class="tag-hash">#</span>` に `aria-hidden="true"` を追加
+- `post.html` / `archive.html` / `tag.html` / `tags.html` / `404.html`: 戻るリンクを `{{root}}index.html`（`post.html` は `../index.html`）から
+  `{{root}}` に変更（URL に `index.html` が付かない）。`layout.html` のサイト名のリンクは `href="{{root}}"`
 
 ### ワークフロー
 - `configure-pages` をビルドの前に移動し、その出力 `base_url` を `--base-url` で渡すように変更

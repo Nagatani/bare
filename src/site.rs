@@ -459,7 +459,13 @@ struct Renderer<'a> {
 
 impl Renderer<'_> {
     /// Shared values plus `{{root}}`, the relative path from the page to the site root.
+    ///
+    /// On pages at the site root the relative path is empty, but `{{root}}`
+    /// becomes `./` there: templates link home with `href="{{root}}"`, and an
+    /// empty `href` would point at the current page instead (e.g. archive.html).
+    /// `./css/style.css` and `css/style.css` mean the same, so prefixes still work.
     fn context(&self, root: &str) -> Context<'static> {
+        let root = if root.is_empty() { "./" } else { root };
         self.base.clone().with("root", root)
     }
 
@@ -1273,9 +1279,12 @@ fn render_pagination(current: usize, count: usize, root: &str, args: &Args) -> S
     if count <= 1 {
         return String::new();
     }
-    let href = |n: usize| match n {
-        1 => format!("{root}index.html"),
-        n => format!("{root}page/{n}.html"),
+    // Page 1 is linked as its directory (`../` or `./`), not `index.html`, so
+    // the URL matches the one the site is entered by.
+    let href = |n: usize| match (n, root) {
+        (1, "") => "./".to_string(),
+        (1, root) => root.to_string(),
+        (n, root) => format!("{root}page/{n}.html"),
     };
     let mut items = Vec::new();
     // The default link text is just an arrow, which screen readers announce as
@@ -1456,7 +1465,7 @@ mod tests {
         );
         let middle = render_pagination(5, 9, "../", &Args::default());
         assert!(middle.starts_with("<ol class=\"pagination\"><li><a rel=\"prev\" aria-label=\"前のページ\" href=\"../page/4.html\">←</a></li>\
-             <li><a href=\"../index.html\">1</a></li><li class=\"gap\">…</li>\
+             <li><a href=\"../\">1</a></li><li class=\"gap\">…</li>\
              <li><a href=\"../page/4.html\">4</a></li><li><span aria-current=\"page\">5</span></li>"));
         assert!(middle.ends_with(
             "<li class=\"gap\">…</li><li><a href=\"../page/9.html\">9</a></li>\
@@ -1588,7 +1597,7 @@ mod tests {
                 ("content/static/css/custom.css", "custom {}"),
                 (
                     "content/themes/default/templates/layout.html",
-                    "<title>{{page_title}}</title>{{content}}",
+                    "<title>{{page_title}}</title><a href=\"{{root}}\">home</a>{{content}}",
                 ),
                 (
                     "content/themes/default/templates/post.html",
@@ -1637,6 +1646,11 @@ mod tests {
         assert!(index
             .contains("<a rel=\"next\" aria-label=\"次のページ\" href=\"page/2.html\">Older</a>"));
         assert!(out.join("page/2.html").is_file());
+        // Page 2 links back to page 1 as a directory, not index.html.
+        assert!(read("page/2.html").contains("<li><a href=\"../\">1</a></li>"));
+        // Root-level pages get `./` for {{root}}, so the home link is never empty.
+        assert!(read("archive.html").contains("<a href=\"./\">home</a>"));
+        assert!(read("posts/a.html").contains("<a href=\"../\">home</a>"));
 
         let archive = read("archive.html");
         assert!(archive.contains("<title>年別 · T</title>"));
