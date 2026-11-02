@@ -1,6 +1,6 @@
 //! Site orchestration: discover posts, render them through templates, write `dist/`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::error::Error;
 use std::fmt;
@@ -12,6 +12,7 @@ use crate::assets::Fingerprints;
 use crate::css;
 use crate::feed;
 use crate::images;
+use crate::og;
 use crate::parser::{self, escape_html};
 use crate::template::{Args, Context, Kind, Spec, Template};
 use crate::text;
@@ -27,6 +28,9 @@ pub struct Config {
     pub drafts: bool,
     /// Public URL of the site; overrides `base_url` in `site.conf`.
     pub base_url: Option<String>,
+    /// Generate OGP images with Chrome (see `og`). Off for `serve`, where
+    /// previews are rebuilt on every save and nobody sees the images.
+    pub og_images: bool,
 }
 
 /// A parsed and rendered post, ready to be placed into templates.
@@ -99,6 +103,8 @@ pub(crate) struct SiteMeta {
     archive_title: String,
     tags_title: String,
     not_found_title: String,
+    /// `og_image` in site.conf: `off` turns generated OGP images off.
+    og_image: bool,
     /// `theme` in site.conf: a directory name under `content/themes/`.
     /// `None` means the default theme (or the old layout without themes/).
     theme: Option<String>,
@@ -144,6 +150,7 @@ impl SiteMeta {
             archive_title: non_empty("archive_title").unwrap_or_else(|| "Archive".into()),
             tags_title: non_empty("tags_title").unwrap_or_else(|| "Tags".into()),
             not_found_title: non_empty("not_found_title").unwrap_or_else(|| "404 Not Found".into()),
+            og_image: !matches!(conf.get("og_image").map(str::trim), Some("off")),
             theme: non_empty("theme").map(|t| t.trim().to_string()),
         })
     }
@@ -409,6 +416,8 @@ struct Templates {
     tag: Option<Template>,
     tags: Option<Template>,
     not_found: Option<Template>,
+    /// The OGP image card; without it no images are generated.
+    og: Option<Template>,
 }
 
 impl Templates {
@@ -441,6 +450,7 @@ impl Templates {
             tag: optional("tag.html")?,
             tags: optional("tags.html")?,
             not_found: optional("404.html")?,
+            og: optional("og.html")?,
         })
     }
 }
@@ -536,7 +546,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
 
     // Without `clean`, only generated directories are cleared, so stale pages from
     // deleted posts or tags disappear without touching anything else.
-    for dir in ["posts", "tags", "page"] {
+    for dir in ["posts", "tags", "page", "og"] {
         let dir = config.out_dir.join(dir);
         if dir.exists() {
             fs::remove_dir_all(&dir).at(&dir)?;
@@ -562,6 +572,15 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     let link_tags = templates.tag.is_some();
 
     let mut written = Vec::new();
+    let og_slugs = og_images(
+        config,
+        &site,
+        &templates,
+        &posts,
+        &mut r,
+        &mut written,
+        (&mut warnings, &mut notes),
+    );
     let base_path = site.base_path();
     let mut fingerprints = Fingerprints::new(&config.out_dir, &base_path);
     let mut write = |path: PathBuf, contents: String| -> Result<(), BuildError> {
@@ -578,6 +597,9 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     for post in &posts {
         let root = "../";
         let path = post.path();
+        let generated = og_slugs
+            .contains(post.slug.as_str())
+            .then(|| format!("/og/{}.png", encode_path(&post.slug)));
         let context = r
             .context(root)
             .with("title", escape_html(&post.title))
@@ -602,7 +624,9 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             title: &post.title,
             description: Some(post.summary()),
             path: Some(&path),
-            image: post.image.as_deref(),
+            // The post's own image wins; then its generated card; then the
+            // site-wide image (applied in meta_tags).
+            image: post.image.as_deref().or(generated.as_deref()),
             published: Some(&post.date),
             root,
         };
@@ -864,6 +888,79 @@ fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
 /// files copied. A missing `from` directory copies nothing. Stylesheets are
 /// written with their `@import`s inlined, and CSS partials (`_*.css`) are
 /// skipped (see [`css`]).
+/// Renders OGP images for posts without their own `image` and returns the
+/// slugs that got one. Images are only made when they can be used: og:image
+/// needs an absolute URL (so `base_url` must be known), the theme must have an
+/// `og.html`, and neither site.conf (`og_image: off`) nor the caller
+/// (`serve`) has turned them off. Problems become notes or warnings; the build
+/// never fails because of an image.
+fn og_images<'p>(
+    config: &Config,
+    site: &SiteMeta,
+    templates: &Templates,
+    posts: &'p [Post],
+    r: &mut Renderer,
+    written: &mut Vec<PathBuf>,
+    (warnings, notes): (&mut Vec<String>, &mut Vec<String>),
+) -> HashSet<&'p str> {
+    let mut slugs = HashSet::new();
+    let Some(template) = &templates.og else {
+        return slugs;
+    };
+    if !config.og_images || !site.og_image || site.base_url.is_none() {
+        return slugs;
+    }
+    let wanted: Vec<&Post> = posts.iter().filter(|post| post.image.is_none()).collect();
+    if wanted.is_empty() {
+        return slugs;
+    }
+    let dir = config.out_dir.join("og");
+    let cards: Vec<og::Card> = wanted
+        .iter()
+        .map(|post| {
+            let context = r
+                .context("")
+                .with("title", escape_html(&post.title))
+                .with("date", escape_html(&post.date))
+                .with(
+                    "description",
+                    escape_html(post.description.as_deref().unwrap_or("")),
+                );
+            og::Card {
+                html: r.render(template, &context),
+                target: dir.join(format!("{}.png", post.slug)),
+            }
+        })
+        .collect();
+
+    let chrome = og::find_chrome();
+    let outcome = og::render(&cards, chrome.as_deref());
+    for (post, card) in wanted.iter().zip(&cards) {
+        if outcome.written.contains(&card.target) {
+            slugs.insert(post.slug.as_str());
+        }
+    }
+    let missing = cards.len() - outcome.written.len();
+    if chrome.is_none() && missing > 0 {
+        notes.push(format!(
+            "Chrome not found: skipped {missing} OGP image(s) \
+             (install Google Chrome or set BARE_CHROME to its path)"
+        ));
+    }
+    if !outcome.written.is_empty() {
+        notes.push(format!(
+            "OGP images: {} written ({} from cache)",
+            outcome.written.len(),
+            outcome.cached
+        ));
+    }
+    // Warnings never fail a build (only broken links do in `check`), so a
+    // failed image is reported without stopping a deploy.
+    warnings.extend(outcome.warnings);
+    written.extend(outcome.written);
+    slugs
+}
+
 /// Copies the merged contents of `roots` (highest priority first) into `to`.
 ///
 /// For each relative path the highest-priority file wins, so `content/static/`
@@ -1390,6 +1487,7 @@ mod tests {
             archive_title: "Archive".into(),
             tags_title: "Tags".into(),
             not_found_title: "404 Not Found".into(),
+            og_image: true,
             theme: None,
         }
     }
@@ -1630,6 +1728,7 @@ mod tests {
             clean: false,
             drafts: false,
             base_url: None,
+            og_images: true,
         })
         .unwrap();
         let read = |path: &str| fs::read_to_string(out.join(path)).unwrap();

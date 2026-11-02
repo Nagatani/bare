@@ -6,6 +6,7 @@ mod css;
 mod feed;
 mod highlight;
 mod images;
+mod og;
 mod parser;
 mod scaffold;
 mod serve;
@@ -65,6 +66,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
         clean: false,
         drafts: false,
         base_url: None,
+        og_images: true,
     };
     let mut serve = ServeOptions {
         port: 3000,
@@ -133,6 +135,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String>
                 config.out_dir = PathBuf::from("target/bare-serve");
             }
             config.drafts = true;
+            config.og_images = false;
             Command::Serve(config, serve)
         }
         _ => Command::Build(config),

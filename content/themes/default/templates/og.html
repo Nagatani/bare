@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="{{site_lang}}">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {
+    margin: 0;
+    width: 1200px;
+    height: 630px;
+  }
+
+  body {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    padding: 72px 88px 64px;
+    border-block-start: 16px solid #0645ad;
+    background: #fcfcfd;
+    color: #1f2328;
+    font-family: "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
+  }
+
+  .site {
+    margin: 0;
+    color: #59636e;
+    font-size: 30px;
+    font-weight: 600;
+  }
+
+  h1 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    margin: auto 0;
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.35;
+    word-break: auto-phrase;
+  }
+
+  .meta {
+    margin: 0;
+    color: #59636e;
+    font-size: 28px;
+  }
+</style>
+</head>
+<body>
+  <p class="site">{{site_title}}</p>
+  <h1>{{title}}</h1>
+  <p class="meta">{{date}}</p>
+</body>
+</html>
