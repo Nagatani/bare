@@ -288,6 +288,10 @@ mod tests {
         run(&up, &["add", "-A"]);
         run(&up, &["commit", "-q", "-m", "init"]);
         run(&base, &["clone", "-q", "up", "fork"]);
+        // `git merge --no-commit` still requires a committer identity, and CI
+        // runners have none, so the fork gets its own (as a real fork would).
+        run(&fork, &["config", "user.name", "bare"]);
+        run(&fork, &["config", "user.email", "bare@example.com"]);
 
         // The fork edits a sample post and writes its own.
         write(&fork.join("content/posts/sample.md"), "mine\n");
