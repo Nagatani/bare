@@ -36,9 +36,9 @@ description: コマンドとオプション、プレビューサーバー、生�
 | `author` | `<meta name="author">` | （空） |
 | `lang` | `<html lang>` | `ja` |
 | `base_url` | 公開 URL | （空。GitHub Actions では自動） |
-| `image` | SNS で共有したときの既定のプレビュー画像（記事以外のページと、OGP 画像を作れなかった記事に使う） | （空） |
+| `image` | SNS で共有したときの既定のプレビュー画像。書くと、トップ・アーカイブ・タグのページはこの画像を使う | （空） |
 | `per_page` | 記事一覧の 1 ページあたりの件数 | （空。すべてを 1 ページに） |
-| `og_image` | `off` にすると、記事の OGP 画像を自動で作らない | （空。作る） |
+| `og_image` | `off` にすると、OGP 画像を自動で作らない | （空。作る） |
 | `theme` | 使うテーマ（`content/themes/` の下のディレクトリ名） | `default` |
 | `archive_title` / `tags_title` / `not_found_title` | 年別アーカイブ・タグ一覧・404 ページの `<title>` に使う名前 | `Archive` / `Tags` / `404 Not Found` |
 
@@ -60,7 +60,7 @@ description: コマンドとオプション、プレビューサーバー、生�
 | `tags/<タグ>.html` / `tags/index.html` | タグ別の記事一覧 / タグ一覧 |
 | `archive.html` | 年別の記事一覧 |
 | `404.html` | 存在しない URL 用のページ |
-| `og/<ファイル名>.png` | 記事の OGP 画像（`image` のない記事。下の「OGP 画像」を参照） |
+| `og/…` | 自動で作った OGP 画像（ページと同じ構成。例: `og/posts/hello-world.png`。下の「OGP 画像」を参照） |
 | `feed.xml` / `sitemap.xml` | Atom フィード（最新 20 件）とサイトマップ。公開 URL が分かる場合だけ |
 | その他 | `content/static/` とテーマの `static/` からのコピー |
 
@@ -71,14 +71,17 @@ description: コマンドとオプション、プレビューサーバー、生�
 
 ## OGP 画像
 
-frontmatter に `image` がない記事には、タイトル・サイト名・日付を入れた 1200×630 の画像を自動で作り、
+ページごとに、タイトルとサイト名を入れた 1200×630 の画像を自動で作り、
 SNS で共有したときのプレビュー画像（`og:image`）にします。
 
-| 状況 | 使われる画像 |
+| ページ | 使われる画像 |
 | --- | --- |
-| 記事に `image` がある | その画像 |
-| `image` がない | 自動で作った `og/<ファイル名>.png` |
-| 画像を作れなかった・記事以外のページ | `site.conf` の `image`（なければ画像なし） |
+| 記事・固定ページ | frontmatter の `image`。なければ自動で作る（記事は日付、固定ページは `description` も入る） |
+| トップ・年別アーカイブ・タグ一覧・タグ別ページ | `site.conf` の `image`。なければ自動で作る（トップはサイト名と `description`） |
+| 404 ページ | 作らない |
+
+画像を作れなかったときは `site.conf` の `image` を使い、それもなければ画像なしになります。
+記事一覧の 2 ページ目以降は、トップページと同じ画像を使います。
 
 - 画像はテーマの `og.html` を Google Chrome で表示して撮ります（ヘッドレスで動き、画面には出ません）。
   GitHub Actions のランナーには Chrome が入っているので、設定は不要です。
@@ -87,7 +90,7 @@ SNS で共有したときのプレビュー画像（`og:image`）にします。
   別の場所にある Chrome や Chromium を使うときは、環境変数 `BARE_CHROME` にパスを書きます。
 - `og:image` は絶対 URL が必要なので、公開 URL が分かるとき（GitHub Actions や `--base-url` 指定時）だけ作ります。
   `bare serve` のプレビューでは作りません。
-- 作った画像は `target/bare-og/` に保存し、タイトルや日付、`og.html` が変わった記事だけを作り直します。
+- 作った画像は `target/bare-og/` に保存し、タイトルや日付、`og.html` が変わったページだけを作り直します。
   GitHub Actions でもこの保存先をキャッシュしています。
 - 見た目はテーマの `og.html` で変えられます（[デザインを変える](customize-design.html#テンプレート)）。
   作らないようにするには、`site.conf` に `og_image: off` と書きます。

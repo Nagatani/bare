@@ -93,7 +93,7 @@ content/themes/
 | `tag.html`（任意） | `{{tag}}`, `{{post_list}}`, `{{post_count}}` |
 | `tags.html`（任意） | `{{tag_list}}`, `{{tag_count}}` |
 | `404.html`（任意） | `{{root}}` は `/bare/` のようなルートからの絶対パスになる |
-| `og.html`（任意） | OGP 画像のカード（1200×630）。`{{title}}`, `{{date}}`, `{{description}}`（[OGP 画像](build-and-publish.html#ogp-画像)） |
+| `og.html`（任意） | OGP 画像のカード（1200×630）。`{{title}}`, `{{date}}`, `{{description}}`, `{{kind}}`（ページの種類: `post`・`page`・`index`・`archive`・`tags`・`tag`。`<body class="{{kind}}">` のように使い、CSS で種類ごとに見た目を変えられる）（[OGP 画像](build-and-publish.html#ogp-画像)） |
 
 任意のテンプレートがなければ、そのページは出力されません（`page.html` は簡易な既定のものを使います）。
 知らないトークンはビルド時に警告し、出力にはそのまま残します。

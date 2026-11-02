@@ -40,15 +40,33 @@
   }
 
   .meta {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
     margin: 0;
     color: #59636e;
     font-size: 28px;
+    line-height: 1.5;
+  }
+
+  .description {
+    display: none;
+  }
+
+  .index .site {
+    visibility: hidden;
+  }
+
+  .index .description,
+  .page .description {
+    display: inline;
   }
 </style>
 </head>
-<body>
+<body class="{{kind}}">
   <p class="site">{{site_title}}</p>
   <h1>{{title}}</h1>
-  <p class="meta">{{date}}</p>
+  <p class="meta">{{date}}<span class="description">{{description}}</span></p>
 </body>
 </html>

@@ -572,11 +572,13 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     let link_tags = templates.tag.is_some();
 
     let mut written = Vec::new();
-    let og_slugs = og_images(
+    let groups = group_by_tag(&posts);
+    let og_pages = og_requests(&site, &templates, &posts, &pages, &groups);
+    let og_done = og_images(
         config,
         &site,
         &templates,
-        &posts,
+        &og_pages,
         &mut r,
         &mut written,
         (&mut warnings, &mut notes),
@@ -597,9 +599,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     for post in &posts {
         let root = "../";
         let path = post.path();
-        let generated = og_slugs
-            .contains(post.slug.as_str())
-            .then(|| format!("/og/{}.png", encode_path(&post.slug)));
+        let generated = og_url(&og_done, &format!("posts/{}.png", post.slug));
         let context = r
             .context(root)
             .with("title", escape_html(&post.title))
@@ -643,6 +643,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     for page in &pages {
         let root = "";
         let path = page.path();
+        let generated = og_url(&og_done, &format!("{}.png", page.slug));
         let context = r
             .context(root)
             .with("title", escape_html(&page.title))
@@ -666,7 +667,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             title: &page.title,
             description: page.description.as_deref(),
             path: Some(&path),
-            image: page.image.as_deref(),
+            image: page.image.as_deref().or(generated.as_deref()),
             published: None,
             root,
         };
@@ -694,6 +695,8 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
         let dir = config.out_dir.join("page");
         fs::create_dir_all(&dir).at(&dir)?;
     }
+    // Every page of the post list shares the top page's image.
+    let index_image = og_url(&og_done, "index.png");
     for (index, chunk) in chunks.iter().enumerate() {
         let number = index + 1;
         let (root, path) = match number {
@@ -720,7 +723,7 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             title: &title,
             description: None,
             path: Some(&path),
-            image: None,
+            image: index_image.as_deref(),
             published: None,
             root,
         };
@@ -747,11 +750,12 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             })
             .with("post_count", posts.len().to_string());
         let body = r.render(archive, &context);
+        let image = og_url(&og_done, "archive.png");
         let meta = PageMeta {
             title: &site.archive_title,
             description: None,
             path: Some("archive.html"),
-            image: None,
+            image: image.as_deref(),
             published: None,
             root: "",
         };
@@ -765,7 +769,6 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
     }
 
     if let Some(tag_template) = &templates.tag {
-        let groups = group_by_tag(&posts);
         let tags_out = config.out_dir.join("tags");
         fs::create_dir_all(&tags_out).at(&tags_out)?;
         let root = "../";
@@ -780,11 +783,12 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 .with("post_count", group.posts.len().to_string());
             let body = r.render(tag_template, &context);
             let title = format!("#{}", group.name);
+            let image = og_url(&og_done, &format!("tags/{}.png", group.file));
             let meta = PageMeta {
                 title: &title,
                 description: None,
                 path: Some(&path),
-                image: None,
+                image: image.as_deref(),
                 published: None,
                 root,
             };
@@ -802,11 +806,12 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
                 })
                 .with("tag_count", groups.len().to_string());
             let body = r.render(tags_template, &context);
+            let image = og_url(&og_done, "tags/index.png");
             let meta = PageMeta {
                 title: &site.tags_title,
                 description: None,
                 path: Some("tags/"),
-                image: None,
+                image: image.as_deref(),
                 published: None,
                 root,
             };
@@ -884,60 +889,148 @@ fn ensure_safe_to_clean(config: &Config) -> Result<(), BuildError> {
     Ok(())
 }
 
-/// Recursively copies the contents of `from` into `to`, returning the number of
-/// files copied. A missing `from` directory copies nothing. Stylesheets are
-/// written with their `@import`s inlined, and CSS partials (`_*.css`) are
-/// skipped (see [`css`]).
-/// Renders OGP images for posts without their own `image` and returns the
-/// slugs that got one. Images are only made when they can be used: og:image
-/// needs an absolute URL (so `base_url` must be known), the theme must have an
-/// `og.html`, and neither site.conf (`og_image: off`) nor the caller
-/// (`serve`) has turned them off. Problems become notes or warnings; the build
-/// never fails because of an image.
-fn og_images<'p>(
+/// The pages that should get a generated OGP image, with what goes on each card.
+///
+/// Posts and static pages get one unless their frontmatter sets `image`. List
+/// pages (top, archive, tags) get one only when site.conf has no `image`: a
+/// site-wide image was chosen on purpose and stays their image, as before
+/// these were generated. The titles match the pages' `<title>`s.
+fn og_requests(
+    site: &SiteMeta,
+    templates: &Templates,
+    posts: &[Post],
+    pages: &[Page],
+    groups: &[TagGroup],
+) -> Vec<OgPage> {
+    let card = |file: String, kind, title: &str, date: &str, description: &str| OgPage {
+        file,
+        kind,
+        title: title.to_string(),
+        date: date.to_string(),
+        description: description.to_string(),
+    };
+    let mut out = Vec::new();
+    for post in posts.iter().filter(|post| post.image.is_none()) {
+        let description = post.description.as_deref().unwrap_or("");
+        out.push(card(
+            format!("posts/{}.png", post.slug),
+            "post",
+            &post.title,
+            &post.date,
+            description,
+        ));
+    }
+    for page in pages.iter().filter(|page| page.image.is_none()) {
+        let description = page.description.as_deref().unwrap_or("");
+        out.push(card(
+            format!("{}.png", page.slug),
+            "page",
+            &page.title,
+            "",
+            description,
+        ));
+    }
+    if site.image.is_some() {
+        return out;
+    }
+    out.push(card(
+        "index.png".into(),
+        "index",
+        &site.title,
+        "",
+        &site.description,
+    ));
+    if templates.archive.is_some() {
+        out.push(card(
+            "archive.png".into(),
+            "archive",
+            &site.archive_title,
+            "",
+            "",
+        ));
+    }
+    if templates.tag.is_some() {
+        for group in groups {
+            let title = format!("#{}", group.name);
+            out.push(card(
+                format!("tags/{}.png", group.file),
+                "tag",
+                &title,
+                "",
+                "",
+            ));
+        }
+        if templates.tags.is_some() {
+            out.push(card(
+                "tags/index.png".into(),
+                "tags",
+                &site.tags_title,
+                "",
+                "",
+            ));
+        }
+    }
+    out
+}
+
+/// A page that may get a generated OGP image.
+struct OgPage {
+    /// Where the image goes under `og/`, mirroring the page's own path
+    /// (`posts/a.png`, `archive.png`, `tags/rust.png`), so pages never share a
+    /// file even when a post and a static page have the same name.
+    file: String,
+    /// `{{kind}}` in og.html: post, page, index, archive, tags or tag. Lets a
+    /// card's CSS lay out list pages differently from posts.
+    kind: &'static str,
+    title: String,
+    date: String,
+    description: String,
+}
+
+/// Renders the OGP images for `pages` and returns the `file`s that were
+/// written. Images are only made when they can be used: og:image needs an
+/// absolute URL (so `base_url` must be known), the theme must have an
+/// `og.html`, and neither site.conf (`og_image: off`) nor the caller (`serve`)
+/// has turned them off. Problems become notes or warnings; the build never
+/// fails because of an image.
+fn og_images(
     config: &Config,
     site: &SiteMeta,
     templates: &Templates,
-    posts: &'p [Post],
+    pages: &[OgPage],
     r: &mut Renderer,
     written: &mut Vec<PathBuf>,
     (warnings, notes): (&mut Vec<String>, &mut Vec<String>),
-) -> HashSet<&'p str> {
-    let mut slugs = HashSet::new();
+) -> HashSet<String> {
+    let mut done = HashSet::new();
     let Some(template) = &templates.og else {
-        return slugs;
+        return done;
     };
-    if !config.og_images || !site.og_image || site.base_url.is_none() {
-        return slugs;
-    }
-    let wanted: Vec<&Post> = posts.iter().filter(|post| post.image.is_none()).collect();
-    if wanted.is_empty() {
-        return slugs;
+    if !config.og_images || !site.og_image || site.base_url.is_none() || pages.is_empty() {
+        return done;
     }
     let dir = config.out_dir.join("og");
-    let cards: Vec<og::Card> = wanted
+    let cards: Vec<og::Card> = pages
         .iter()
-        .map(|post| {
+        .map(|page| {
             let context = r
                 .context("")
-                .with("title", escape_html(&post.title))
-                .with("date", escape_html(&post.date))
-                .with(
-                    "description",
-                    escape_html(post.description.as_deref().unwrap_or("")),
-                );
+                .with("kind", page.kind)
+                .with("title", escape_html(&page.title))
+                .with("date", escape_html(&page.date))
+                .with("description", escape_html(&page.description));
             og::Card {
                 html: r.render(template, &context),
-                target: dir.join(format!("{}.png", post.slug)),
+                target: dir.join(&page.file),
             }
         })
         .collect();
 
     let chrome = og::find_chrome();
     let outcome = og::render(&cards, chrome.as_deref());
-    for (post, card) in wanted.iter().zip(&cards) {
+    for (page, card) in pages.iter().zip(&cards) {
         if outcome.written.contains(&card.target) {
-            slugs.insert(post.slug.as_str());
+            done.insert(page.file.clone());
         }
     }
     let missing = cards.len() - outcome.written.len();
@@ -958,7 +1051,17 @@ fn og_images<'p>(
     // failed image is reported without stopping a deploy.
     warnings.extend(outcome.warnings);
     written.extend(outcome.written);
-    slugs
+    done
+}
+
+/// The root-relative URL (`/og/posts/a.png`) of a generated image, or `None`
+/// if `file` was not generated. Each path segment is percent-encoded, as page
+/// URLs are, since slugs and tags may contain spaces or Japanese.
+fn og_url(done: &HashSet<String>, file: &str) -> Option<String> {
+    done.contains(file).then(|| {
+        let encoded: Vec<String> = file.split('/').map(encode_path).collect();
+        format!("/og/{}", encoded.join("/"))
+    })
 }
 
 /// Copies the merged contents of `roots` (highest priority first) into `to`.
@@ -1807,5 +1910,86 @@ mod tests {
         assert!(html.starts_with("<ol class=\"pg\"><li><a rel=\"prev\" aria-label=\"前のページ\" href=\"page/4.html\">Newer</a>"));
         assert!(html.contains("<li class=\"gap\">...</li>"));
         assert!(html.contains("<span class=\"now\" aria-current=\"page\">5</span>"));
+    }
+
+    fn post(slug: &str, image: Option<&str>) -> Post {
+        Post {
+            slug: slug.into(),
+            title: slug.to_uppercase(),
+            date: "2026-01-02".into(),
+            description: None,
+            image: image.map(str::to_string),
+            tags: vec!["x".into()],
+            html: String::new(),
+            headings: Vec::new(),
+            excerpt: String::new(),
+            reading_minutes: 1,
+        }
+    }
+
+    #[test]
+    fn chooses_pages_for_ogp_images() {
+        let templates = Templates {
+            layout: Template::new(""),
+            post: Template::new(""),
+            index: Template::new(""),
+            page: None,
+            archive: Some(Template::new("")),
+            tag: Some(Template::new("")),
+            tags: Some(Template::new("")),
+            not_found: None,
+            og: Some(Template::new("")),
+        };
+        let posts = [post("a", None), post("b", Some("/images/b.png"))];
+        let pages = [Page {
+            slug: "about".into(),
+            title: "About".into(),
+            description: Some("Me".into()),
+            image: None,
+            nav: None,
+            html: String::new(),
+            headings: Vec::new(),
+        }];
+        let groups = group_by_tag(&posts);
+        let files = |site: &SiteMeta| -> Vec<(String, &'static str)> {
+            og_requests(site, &templates, &posts, &pages, &groups)
+                .into_iter()
+                .map(|page| (page.file, page.kind))
+                .collect()
+        };
+
+        // Post b has its own image; every other page gets a card.
+        let mut site = site(None);
+        assert_eq!(
+            files(&site),
+            [
+                ("posts/a.png".to_string(), "post"),
+                ("about.png".to_string(), "page"),
+                ("index.png".to_string(), "index"),
+                ("archive.png".to_string(), "archive"),
+                ("tags/x.png".to_string(), "tag"),
+                ("tags/index.png".to_string(), "tags"),
+            ]
+        );
+
+        // A site-wide image stays the image of the list pages.
+        site.image = Some("/images/site.png".into());
+        assert_eq!(
+            files(&site),
+            [
+                ("posts/a.png".to_string(), "post"),
+                ("about.png".to_string(), "page")
+            ]
+        );
+    }
+
+    #[test]
+    fn encodes_ogp_image_urls() {
+        let done: HashSet<String> = ["posts/日本語 a.png".to_string()].into();
+        assert_eq!(
+            og_url(&done, "posts/日本語 a.png").unwrap(),
+            "/og/posts/%E6%97%A5%E6%9C%AC%E8%AA%9E%20a.png"
+        );
+        assert_eq!(og_url(&done, "posts/other.png"), None);
     }
 }

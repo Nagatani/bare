@@ -22,8 +22,9 @@
 - `custom.css`・画像・favicon・`CNAME` は、これまでどおり `content/static/` に置きます。
 
 ### 追加
-- OGP 画像の自動生成: `image` のない記事に、テーマの `og.html`（タイトル・サイト名・日付）を Google Chrome（ヘッドレス）で
-  撮った 1200×630 の画像 `og/<ファイル名>.png` を作り、`og:image` に設定。公開 URL が分かるときだけ作り、
+- OGP 画像の自動生成: テーマの `og.html`（タイトル・サイト名など）を Google Chrome（ヘッドレス）で撮った 1200×630 の画像を
+  `og/` に作り、`og:image` に設定。記事・固定ページは frontmatter に `image` がないとき、トップ・年別アーカイブ・
+  タグ一覧・タグ別ページは `site.conf` に `image` がないときに作る。公開 URL が分かるときだけ作り、
   `target/bare-og/` にキャッシュする。Chrome が見つからなければ作らずに note を表示（`BARE_CHROME` でパスを指定できる）。
   `site.conf` の `og_image: off` で無効化。`bare serve` では作らない
 - `site.conf` の `archive_title`・`tags_title`・`not_found_title`: 年別アーカイブ・タグ一覧・404 ページの `<title>` に使う名前
@@ -121,7 +122,8 @@
 - `post.html` / `archive.html` / `tag.html` / `tags.html` / `404.html`: 戻るリンクの矢印を
   `<span aria-hidden="true">←</span>` に変更（読み上げで「矢印」と読まれないように）
 - `tag.html`: `<span class="tag-hash">#</span>` に `aria-hidden="true"` を追加
-- `og.html`: 新規（任意）。OGP 画像のカード。置かなければ OGP 画像は作らない
+- `og.html`: 新規（任意）。OGP 画像のカード。置かなければ OGP 画像は作らない。
+  `{{kind}}`（ページの種類）で、種類ごとに見た目を変えられる
 - `post.html` / `archive.html` / `tag.html` / `tags.html` / `404.html`: 戻るリンクを `{{root}}index.html`（`post.html` は `../index.html`）から
   `{{root}}` に変更（URL に `index.html` が付かない）。`layout.html` のサイト名のリンクは `href="{{root}}"`
 
