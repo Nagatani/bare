@@ -36,6 +36,12 @@ pub struct Args<'s> {
 
 impl<'s> Args<'s> {
     /// Parses `key="value" key2="value2"`.
+    ///
+    /// Values are kept as written: there is no escaping, so a value cannot
+    /// contain `"`. A value cannot contain `}}` either, because the template
+    /// scanner ends the placeholder at the first `}}` before this sees it.
+    /// Names are limited to `a-z` and `_` so a typo such as `Class=` is reported
+    /// instead of being silently ignored.
     pub fn parse(source: &'s str) -> Result<Self, String> {
         let mut pairs = Vec::new();
         let mut rest = source.trim_start();
@@ -75,6 +81,9 @@ impl<'s> Args<'s> {
     }
 
     /// `key="true"` / `key="false"`, or `default` when it is not given.
+    ///
+    /// Any value other than `"true"` counts as false here; [`Template::problems`]
+    /// warns about such values, so this only decides what is rendered meanwhile.
     pub fn flag(&self, key: &str, default: bool) -> bool {
         match self.get(key) {
             Some(value) => value == "true",
@@ -87,11 +96,21 @@ impl<'s> Args<'s> {
     }
 }
 
+/// What a placeholder is replaced with.
+///
+/// `'a` is the lifetime of data a `Markup` closure borrows (posts, tag groups,
+/// the page's root path). Site-wide values are built once as `Context<'static>`
+/// and then extended per page; that works because `Context` is covariant in
+/// `'a`, so a `Context<'static>` can be used where a shorter `'a` is expected.
 #[derive(Clone)]
 enum Value<'a> {
+    /// Inserted as is; such placeholders take no arguments.
     Text(String),
+    /// Rendered on each occurrence with that occurrence's arguments, so one
+    /// template may use the same placeholder twice with different arguments.
     Markup {
         spec: Spec,
+        // `Rc` because the shared base context is cloned for every page.
         render: Rc<dyn Fn(&Args) -> String + 'a>,
     },
 }
@@ -107,13 +126,19 @@ impl<'a> Context<'a> {
         Self::default()
     }
 
+    /// Sets `key` to plain text, replacing any earlier value for it.
+    /// The caller is responsible for escaping `value` when it is not HTML.
     pub fn with(mut self, key: &str, value: impl Into<String>) -> Self {
         self.values
             .insert(key.to_string(), Value::Text(value.into()));
         self
     }
 
-    /// A placeholder rendered by `render`, which accepts the arguments in `spec`.
+    /// Sets `key` to markup produced by `render`, which accepts the arguments
+    /// in `spec`, replacing any earlier value for it. `render` receives only
+    /// arguments that parsed; their names and values are checked separately by
+    /// [`Template::problems`], so `render` must fall back to defaults for
+    /// anything missing or out of range.
     pub fn with_markup(
         mut self,
         key: &str,
@@ -149,7 +174,8 @@ impl Template {
         fs::read_to_string(path).map(Self::new)
     }
 
-    /// Placeholders in order of appearance.
+    /// Placeholders in order of appearance. Stops at an unclosed `{{`, which
+    /// [`Template::render`] also leaves alone.
     fn tokens(&self) -> impl Iterator<Item = Token<'_>> {
         let mut rest = self.source.as_str();
         std::iter::from_fn(move || {
@@ -168,12 +194,17 @@ impl Template {
 
     /// Mistakes in the template's placeholders: unknown names (usually typos),
     /// and arguments that are malformed, not accepted, or out of range.
+    ///
+    /// This is separate from [`Template::render`] so rendering never fails: a
+    /// mistake becomes a build warning and the placeholder falls back to its
+    /// default output. Each message appears once even if repeated.
     pub fn problems(&self, context: &Context) -> Vec<String> {
         let mut problems = Vec::new();
         for token in self.tokens() {
             let name = token.name;
             let found = match (context.values.get(name), Args::parse(token.args)) {
                 (None, _) => vec![format!("unknown placeholder {{{{{name}}}}}")],
+                // Parsing stops at the first error, so later arguments are not checked.
                 (Some(_), Err(error)) => vec![format!("{{{{{name}}}}}: {error}")],
                 (Some(Value::Text(_)), Ok(args)) if !args.is_empty() => {
                     vec![format!("{{{{{name}}}}} takes no arguments")]
@@ -204,6 +235,7 @@ impl Template {
             };
             let token = split_token(&inner[..end]);
             match context.values.get(token.name) {
+                // Arguments on a text placeholder are ignored here and reported by `problems`.
                 Some(Value::Text(value)) => out.push_str(value),
                 Some(Value::Markup { render, .. }) => {
                     // Malformed arguments are reported by `problems`; render the default.
@@ -219,6 +251,8 @@ impl Template {
     }
 }
 
+/// Splits the text between `{{` and `}}` into the name and the arguments.
+/// Surrounding spaces are ignored, so `{{ title }}` and `{{title}}` are the same.
 fn split_token(inner: &str) -> Token<'_> {
     let inner = inner.trim();
     match inner.find(char::is_whitespace) {
@@ -233,6 +267,7 @@ fn split_token(inner: &str) -> Token<'_> {
     }
 }
 
+/// Checks parsed arguments against what the placeholder `name` accepts.
 fn check_args(name: &str, spec: Spec, args: &Args) -> Vec<String> {
     let mut problems = Vec::new();
     for (key, value) in &args.pairs {

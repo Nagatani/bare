@@ -339,6 +339,8 @@ impl Templates {
 /// template uses that the build does not provide (usually typos).
 struct Renderer<'a> {
     site: &'a SiteMeta,
+    /// Site-wide values. `'static` because they own their strings; per-page
+    /// contexts start from a clone and add values that borrow posts.
     base: Context<'static>,
     /// Header navigation entries: (path relative to the root, title).
     nav: Vec<(String, String)>,
@@ -370,6 +372,8 @@ impl Renderer<'_> {
         current: Option<&str>,
         body: String,
     ) -> String {
+        // The closure gets its own copy: borrowing `self.nav` would keep `self`
+        // borrowed while `self.render` below needs it mutably.
         let nav = self.nav.clone();
         let context = self
             .context(meta.root)
@@ -507,6 +511,8 @@ pub fn build(config: &Config) -> Result<BuildReport, BuildError> {
             .context(root)
             .with("title", escape_html(&page.title))
             .with("date", "")
+            // Pages have no tags. Still a markup placeholder, so `{{tags class="…"}}`
+            // copied from post.html does not warn about arguments.
             .with_markup("tags", TAGS_ARGS, |_| String::new())
             .with_markup("toc", TOC_ARGS, |args| {
                 parser::render_toc(&page.headings, args.text("class", "toc"))
@@ -968,6 +974,10 @@ fn tag_file(tag: &str) -> String {
 
 // Arguments accepted by the placeholders that produce markup. Leaving them out
 // gives the default output; see "テンプレートの引数" in README.md.
+//
+// The defaults in the render functions below must produce exactly the markup
+// that was output before arguments existed, so forks that never use arguments
+// see no change. Keep README.md in sync when adding an argument.
 const NAV_ARGS: Spec = &[("class", Kind::Text), ("label", Kind::Text)];
 const TAGS_ARGS: Spec = &[
     ("class", Kind::Text),
@@ -1003,6 +1013,10 @@ const TAG_LIST_ARGS: Spec = &[
 ];
 
 /// ` name="value"`, or nothing when `value` is empty.
+///
+/// `value` is inserted unescaped. Pass only template arguments and fixed
+/// defaults here; anything from posts or site.conf must go through
+/// `escape_html` first.
 fn attr(name: &str, value: &str) -> String {
     match value {
         "" => String::new(),
@@ -1010,7 +1024,8 @@ fn attr(name: &str, value: &str) -> String {
     }
 }
 
-/// Text read by screen readers only.
+/// Text read by screen readers only (the `.visually-hidden` class in
+/// `_utilities.css`). Like [`attr`], `text` is inserted unescaped.
 fn hidden(text: &str) -> String {
     match text {
         "" => String::new(),
@@ -1019,6 +1034,8 @@ fn hidden(text: &str) -> String {
 }
 
 /// A post count, read as e.g. "2026、3件" next to the year or tag before it.
+/// Without the hidden prefix, screen readers run the label and the number
+/// together ("20263"), since they sit side by side with no text between.
 fn render_count(count: usize, args: &Args) -> String {
     format!(
         "<span class=\"tag-count\">{}{count}{}</span>",
@@ -1060,6 +1077,7 @@ fn render_tags(tags: &[String], root: Option<&str>, args: &Args) -> String {
         return String::new();
     }
     let item_class = attr("class", args.text("item_class", "tag"));
+    // Inside the link text, so a `#` prefix is part of what is clicked and read.
     let prefix = args.text("prefix", "");
     let items: String = tags
         .iter()
@@ -1093,6 +1111,8 @@ fn render_post_list(posts: &[&Post], root: &str, link_tags: bool, args: &Args) -
             _ => String::new(),
         };
         let tags = match show_tags {
+            // Tags inside a list use the default markup; `{{post_list}}`
+            // arguments do not reach them.
             true => render_tags(&post.tags, link_tags.then_some(root), &Args::default()),
             false => String::new(),
         };
@@ -1120,6 +1140,8 @@ fn render_pagination(current: usize, count: usize, root: &str, args: &Args) -> S
         n => format!("{root}page/{n}.html"),
     };
     let mut items = Vec::new();
+    // The default link text is just an arrow, which screen readers announce as
+    // "left arrow"; the aria-label gives the link its real name.
     if current > 1 {
         items.push(format!(
             "<li><a rel=\"prev\"{} href=\"{}\">{}</a></li>",
@@ -1179,6 +1201,8 @@ fn render_archive(posts: &[Post], link_tags: bool, args: &Args) -> String {
             "<section{class}>\n<{heading} id=\"y{label}\">{label}{count}</{heading}>\n\
              <ul class=\"post-list\">\n{list}</ul>\n</section>\n",
             count = render_count(group.len(), args),
+            // The lists inside the archive use the default markup; `{{archive}}`
+            // arguments only cover the year sections.
             list = render_post_list(&group, "", link_tags, &Args::default()),
         ));
         start = end;

@@ -128,17 +128,21 @@ pub struct Rendered {
     pub headings: Vec<Heading>,
 }
 
-/// Converts the supported Markdown subset to HTML.
+/// Test shorthand for [`render_markdown`] when only the HTML matters.
 ///
-/// `root` is the relative path from the rendered page to the site root (e.g. `"../"`).
-/// Link and image URLs starting with a single `/` are rewritten against it, so
-/// `/images/a.png` keeps working when the site is served from a sub-path.
+/// Test-only (`#[cfg(test)]`), so it does not exist in normal builds or in
+/// `cargo doc`; documentation elsewhere must not link to it.
 #[cfg(test)]
 pub fn markdown_to_html(markdown: &str, root: &str) -> String {
     render_markdown(markdown, root).html
 }
 
-/// Like [`markdown_to_html`], also returning the headings for a table of contents.
+/// Converts the supported Markdown subset to HTML, also returning the headings
+/// for a table of contents.
+///
+/// `root` is the relative path from the rendered page to the site root (e.g. `"../"`).
+/// Link and image URLs starting with a single `/` are rewritten against it, so
+/// `/images/a.png` keeps working when the site is served from a sub-path.
 pub fn render_markdown(markdown: &str, root: &str) -> Rendered {
     // NUL marks footnote references until they are numbered (see `finish_footnotes`).
     let markdown = markdown.replace('\0', "");
@@ -651,6 +655,9 @@ fn replace_footnote_refs(html: &str, mut link: impl FnMut(&str) -> Option<String
 
 /// Renders a nested `<ol>` table of contents from the two highest heading levels
 /// present. Returns an empty string for fewer than two entries.
+///
+/// `class` goes on the outer `<ol>` only (omitted when empty); it comes from
+/// the `{{toc}}` arguments and is inserted unescaped.
 pub fn render_toc(headings: &[Heading], class: &str) -> String {
     let Some(top) = headings.iter().map(|h| h.level).min() else {
         return String::new();
