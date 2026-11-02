@@ -5,6 +5,21 @@ tags: [bare, guide, github-pages]
 description: コマンドとオプション、プレビューサーバー、生成されるファイル、GitHub Actions での公開。
 ---
 
+## ディレクトリ構成
+
+```text
+content/
+  site.conf       サイト名・言語・テーマなどの設定
+  posts/          記事（*.md）
+  pages/          固定ページ（*.md）
+  static/         画像・favicon・custom.css など。そのまま dist/ へコピー
+  themes/
+    default/      既定のテーマ（本家が管理。編集しない）
+    <自分のテーマ>/  変えたいファイルだけを置く。site.conf の theme: で選ぶ
+src/              エンジン（site.rs が全体の流れ、parser.rs が Markdown、template.rs がテンプレート）
+dist/             生成されたサイト（git 管理外）
+```
+
 ## コマンド
 
 | コマンド | 内容 |
