@@ -4,6 +4,8 @@ A zero-dependency, minimalist static site generator written in pure Rust.
 
 **フォークするだけで始められる、日本語の技術ブログのための静的サイトジェネレータ。**
 `Cargo.toml` の `[dependencies]` は空で、Rust 標準ライブラリ（`std`）だけで動作します。
+OGP 画像の生成だけは Google Chrome を使います。GitHub Actions ではランナーに入っている Chrome を使うので、準備は要りません
+（Chrome がない環境では生成を省略し、ビルドは通ります）。
 
 デモ: <https://nagatani.github.io/bare/>
 

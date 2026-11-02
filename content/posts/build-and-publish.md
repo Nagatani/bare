@@ -22,6 +22,7 @@ description: コマンドとオプション、プレビューサーバー、生�
 | `-o, --out <DIR>` | 出力先（既定: `dist`、serve は `target/bare-serve`） |
 | `--clean` | 出力先を丸ごと削除してから生成 |
 | `--drafts` | `draft: true` の記事も出力 |
+| `--no-og` | OGP 画像を作らない（`bare serve` ではもともと作らない） |
 | `--base-url <URL>` | 公開 URL。`feed.xml`・`sitemap.xml`・OGP の絶対 URL に使う |
 | `-p, --port <PORT>` | serve のポート（既定: 3000） |
 | `--subpath <PATH>` | serve で配信するパス（既定: GitHub Pages と同じになるよう自動判定） |
@@ -93,7 +94,7 @@ SNS で共有したときのプレビュー画像（`og:image`）にします。
 - 作った画像は `target/bare-og/` に保存し、タイトルや日付、`og.html` が変わったページだけを作り直します。
   GitHub Actions でもこの保存先をキャッシュしています。
 - 見た目はテーマの `og.html` で変えられます（[デザインを変える](customize-design.html#テンプレート)）。
-  作らないようにするには、`site.conf` に `og_image: off` と書きます。
+  作らないようにするには、`site.conf` に `og_image: off` と書きます（そのビルドだけなら `--no-og`）。
 
 ## GitHub Pages で公開する
 

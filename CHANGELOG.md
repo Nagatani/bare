@@ -26,7 +26,7 @@
   `og/` に作り、`og:image` に設定。記事・固定ページは frontmatter に `image` がないとき、トップ・年別アーカイブ・
   タグ一覧・タグ別ページは `site.conf` に `image` がないときに作る。公開 URL が分かるときだけ作り、
   `target/bare-og/` にキャッシュする。Chrome が見つからなければ作らずに note を表示（`BARE_CHROME` でパスを指定できる）。
-  `site.conf` の `og_image: off` で無効化。`bare serve` では作らない
+  `site.conf` の `og_image: off` か、ビルドの `--no-og` で無効化。`bare serve` では作らない
 - `site.conf` の `archive_title`・`tags_title`・`not_found_title`: 年別アーカイブ・タグ一覧・404 ページの `<title>` に使う名前
   （既定は `Archive`・`Tags`・`404 Not Found`。日本語のブログなら「アーカイブ」などに変えられる）
 - テーマ: `content/themes/<名前>/templates/` と `content/themes/<名前>/static/` を、`site.conf` の `theme:` で選択。
@@ -128,6 +128,7 @@
   `{{root}}` に変更（URL に `index.html` が付かない）。`layout.html` のサイト名のリンクは `href="{{root}}"`
 
 ### ワークフロー
+- `ci.yml`: `bare check` に `--no-og` を付け、公開しない CI のビルドでは OGP 画像を作らない
 - `pages.yml`: OGP 画像用に日本語フォント（`fonts-noto-cjk`、入っていない場合だけ）をインストールし、
   `target/bare-og/` をキャッシュするステップを追加
 - `configure-pages` をビルドの前に移動し、その出力 `base_url` を `--base-url` で渡すように変更

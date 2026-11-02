@@ -43,5 +43,7 @@ jobs:
       - name: Test
         run: cargo test --locked
 
+      # --no-og: OGP images are not deployed from here, and this job has no
+      # Japanese font, so rendering them would only cost time.
       - name: Build and check site
-        run: cargo run --locked -- check --clean --drafts --base-url https://example.github.io/bare/
+        run: cargo run --locked -- check --clean --drafts --no-og --base-url https://example.github.io/bare/
